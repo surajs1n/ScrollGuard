@@ -6,13 +6,19 @@ import PermissionUsageStatsScreen from '../screens/onboarding/PermissionUsageSta
 import PermissionOverlayScreen from '../screens/onboarding/PermissionOverlayScreen';
 import AppSelectionScreen from '../screens/onboarding/AppSelectionScreen';
 import DashboardScreen from '../screens/dashboard/DashboardScreen';
+import SettingsScreen from '../screens/settings/SettingsScreen';
+import MonitoredAppsScreen from '../screens/settings/MonitoredAppsScreen';
+import IntensitySelectionScreen from '../screens/onboarding/IntensitySelectionScreen';
 
 export type RootStackParamList = {
   Welcome: undefined;
   PermissionUsageStats: undefined;
   PermissionOverlay: undefined;
   AppSelection: undefined;
+  IntensitySelection: undefined;
   Dashboard: { openSuggestion?: boolean };
+  Settings: undefined;
+  MonitoredApps: undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -31,7 +37,10 @@ export default function AppNavigator({ initialRoute }: Props) {
       <Stack.Screen name="PermissionUsageStats" component={PermissionUsageStatsScreen} />
       <Stack.Screen name="PermissionOverlay" component={PermissionOverlayScreen} />
       <Stack.Screen name="AppSelection" component={AppSelectionScreen} />
+      <Stack.Screen name="IntensitySelection" component={IntensitySelectionScreen} />
       <Stack.Screen name="Dashboard" component={DashboardScreen} />
+      <Stack.Screen name="Settings" component={SettingsScreen} />
+      <Stack.Screen name="MonitoredApps" component={MonitoredAppsScreen} />
     </Stack.Navigator>
   );
 }

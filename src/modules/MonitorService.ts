@@ -1,16 +1,22 @@
 import { NativeModules, Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import {
+  INTENSITY_PRESETS,
+  DEFAULT_INTENSITY,
+  IntensityLevel,
+} from '../config/intensityPresets';
 
 const { UsageStats } = NativeModules;
 
-const PREFS_INSTALL_DATE = 'scrollguard_install_date';
-const PREFS_MONITORED_APPS = 'scrollguard_monitored_apps';
+const PREFS_INSTALL_DATE     = 'scrollguard_install_date';
+const PREFS_MONITORED_APPS   = 'scrollguard_monitored_apps';
+const PREFS_INTENSITY        = 'scrollguard_intensity';
 
 export const MonitorService = {
   /**
-   * Records the install date and chosen monitored apps into AsyncStorage
-   * AND into the Android SharedPreferences used by UsageMonitorService.
-   * Call this at the end of onboarding.
+   * Called at the end of onboarding (app selection step).
+   * Persists install date + monitored apps. Intensity is written separately
+   * by setIntensity(), called from IntensitySelectionScreen.
    */
   async init(monitoredPackages: string[]): Promise<void> {
     const now = Date.now().toString();
@@ -18,10 +24,37 @@ export const MonitorService = {
       [PREFS_INSTALL_DATE, now],
       [PREFS_MONITORED_APPS, JSON.stringify(monitoredPackages)],
     ]);
-    // Write to Android SharedPreferences so the native service can read them
     if (Platform.OS === 'android') {
-      await writeNativePrefs(Number(now), monitoredPackages);
+      const intensity = await MonitorService.getIntensity();
+      await writeNativePrefs(Number(now), monitoredPackages, intensity);
     }
+  },
+
+  async updateMonitoredApps(monitoredPackages: string[]): Promise<void> {
+    await AsyncStorage.setItem(PREFS_MONITORED_APPS, JSON.stringify(monitoredPackages));
+    if (Platform.OS === 'android') {
+      const [installDate, intensity] = await Promise.all([
+        MonitorService.getInstallDate(),
+        MonitorService.getIntensity(),
+      ]);
+      await writeNativePrefs(installDate ?? Date.now(), monitoredPackages, intensity);
+    }
+  },
+
+  async setIntensity(level: IntensityLevel): Promise<void> {
+    await AsyncStorage.setItem(PREFS_INTENSITY, level);
+    if (Platform.OS === 'android') {
+      const [installDate, monitoredApps] = await Promise.all([
+        MonitorService.getInstallDate(),
+        MonitorService.getMonitoredApps(),
+      ]);
+      await writeNativePrefs(installDate ?? Date.now(), monitoredApps, level);
+    }
+  },
+
+  async getIntensity(): Promise<IntensityLevel> {
+    const val = await AsyncStorage.getItem(PREFS_INTENSITY);
+    return (val as IntensityLevel | null) ?? DEFAULT_INTENSITY;
   },
 
   async getInstallDate(): Promise<number | null> {
@@ -34,7 +67,6 @@ export const MonitorService = {
     return val ? JSON.parse(val) : [];
   },
 
-  /** Day 0 = install day. Week 1 = days 0–6, Week 2 = days 7–13, etc. */
   async getCurrentWeek(): Promise<number> {
     const installDate = await MonitorService.getInstallDate();
     if (!installDate) return 1;
@@ -43,19 +75,33 @@ export const MonitorService = {
   },
 };
 
-// Writes prefs that UsageMonitorService reads (native SharedPreferences bridge).
-// In V1 this is a simple approach: we write via a native module call that updates
-// the "scrollguard_prefs" SharedPreferences file the Kotlin service reads.
+/**
+ * Writes all resolved preset numbers to SharedPreferences.
+ * The native service reads concrete numbers only — it has no knowledge of preset names.
+ * Changing intensityPresets.ts automatically flows through here.
+ */
 async function writeNativePrefs(
   installDate: number,
-  monitoredPackages: string[]
+  monitoredPackages: string[],
+  intensity: IntensityLevel,
 ): Promise<void> {
   try {
-    // UsageStats module exposes a setPrefs method for this purpose
+    const preset = INTENSITY_PRESETS[intensity];
     if (UsageStats?.setMonitorPrefs) {
-      await UsageStats.setMonitorPrefs(installDate, monitoredPackages);
+      await UsageStats.setMonitorPrefs(
+        installDate,
+        monitoredPackages,
+        intensity,
+        preset.sampleDays,
+        preset.weeklyReductionPct,
+        preset.nudgeBufferPct,
+        preset.frictionType,
+        preset.cooldownMinutes,
+        preset.baselineCapMinutes,
+        preset.floorMinutes,
+      );
     }
   } catch {
-    // Non-fatal: service will function with defaults
+    // Non-fatal
   }
 }

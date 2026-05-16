@@ -14,6 +14,12 @@ export interface InstalledApp {
   appName: string;
 }
 
+export interface CuratedApp {
+  packageName: string;
+  appName: string;
+  installed: boolean;
+}
+
 function assertAndroid(): void {
   if (Platform.OS !== 'android') {
     throw new Error('UsageStats is Android-only');
@@ -46,6 +52,12 @@ export const UsageStats = {
   getInstalledMonitoredApps(): Promise<InstalledApp[]> {
     assertAndroid();
     return Native.getInstalledMonitoredApps();
+  },
+
+  /** Returns the full curated app list with installed status for each. */
+  getCuratedAppsWithStatus(): Promise<CuratedApp[]> {
+    assertAndroid();
+    return Native.getCuratedAppsWithStatus();
   },
 
   /** Convenience: returns usage for today (midnight → now). */

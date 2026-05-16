@@ -44,6 +44,9 @@ export default function PermissionOverlayScreen({ navigation }: Props) {
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.content}>
+        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
+          <Text style={styles.backText}>← Back</Text>
+        </TouchableOpacity>
         <Text style={styles.step}>Step 2 of 3</Text>
         <Text style={styles.title}>In-app nudges</Text>
         <Text style={styles.description}>
@@ -115,8 +118,10 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
-    paddingTop: spacing.xxl,
+    paddingTop: spacing.lg,
   },
+  backBtn: { marginBottom: spacing.md },
+  backText: { color: colors.accent, fontSize: font.md, fontWeight: '600' },
   step: {
     color: colors.accent,
     fontSize: font.sm,

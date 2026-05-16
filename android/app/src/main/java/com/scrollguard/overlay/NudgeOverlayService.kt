@@ -30,6 +30,7 @@ class NudgeOverlayService : Service() {
         const val EXTRA_APP_NAME = "appName"
         const val EXTRA_MINUTES_USED = "minutesUsed"
         const val EXTRA_MESSAGE = "message"
+        const val EXTRA_FRICTION_TYPE = "frictionType"
     }
 
     private var windowManager: WindowManager? = null

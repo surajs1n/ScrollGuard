@@ -19,18 +19,23 @@ class UsageStatsModule(reactContext: ReactApplicationContext) :
     companion object {
         const val NAME = "UsageStats"
 
-        // Apps we care about for V1
-        val MONITORED_PACKAGES = listOf(
-            "com.instagram.android",
-            "com.google.android.youtube",
-            "com.reddit.frontpage",
-            "com.snapchat.android",
-            "com.zhiliaoapp.musically",
-            "com.twitter.android",
-            "com.facebook.katana",
-            "com.linkedin.android",
-            "com.whatsapp",
+        // Curated list of commonly addictive apps
+        val CURATED_APPS = listOf(
+            Pair("com.instagram.android",      "Instagram"),
+            Pair("com.google.android.youtube", "YouTube"),
+            Pair("com.zhiliaoapp.musically",   "TikTok"),
+            Pair("com.reddit.frontpage",       "Reddit"),
+            Pair("com.twitter.android",        "X (Twitter)"),
+            Pair("com.facebook.katana",        "Facebook"),
+            Pair("com.snapchat.android",       "Snapchat"),
+            Pair("com.linkedin.android",       "LinkedIn"),
+            Pair("com.whatsapp",               "WhatsApp"),
+            Pair("com.pinterest",              "Pinterest"),
+            Pair("com.tumblr",                 "Tumblr"),
+            Pair("tv.twitch.android.app",      "Twitch"),
         )
+
+        val MONITORED_PACKAGES = CURATED_APPS.map { it.first }
     }
 
     override fun getName() = NAME
@@ -159,13 +164,44 @@ class UsageStatsModule(reactContext: ReactApplicationContext) :
     }
 
     /**
-     * Returns list of monitored apps that are installed on this device.
+     * Returns the full curated app list, each entry marked installed: true/false.
+     * Used by the Settings screen and onboarding Step 3.
+     */
+    @ReactMethod
+    fun getCuratedAppsWithStatus(promise: Promise) {
+        val pm: PackageManager = reactApplicationContext.packageManager
+        val result = WritableNativeArray()
+        CURATED_APPS.forEach { (pkg, fallbackName) ->
+            val installed = try {
+                pm.getApplicationInfo(pkg, 0)
+                true
+            } catch (e: PackageManager.NameNotFoundException) {
+                false
+            }
+            val appName = if (installed) {
+                try { pm.getApplicationLabel(pm.getApplicationInfo(pkg, 0)).toString() }
+                catch (e: Exception) { fallbackName }
+            } else {
+                fallbackName
+            }
+            val map = WritableNativeMap().apply {
+                putString("packageName", pkg)
+                putString("appName", appName)
+                putBoolean("installed", installed)
+            }
+            result.pushMap(map)
+        }
+        promise.resolve(result)
+    }
+
+    /**
+     * Returns only curated apps that are installed (used by usage queries).
      */
     @ReactMethod
     fun getInstalledMonitoredApps(promise: Promise) {
         val pm: PackageManager = reactApplicationContext.packageManager
         val result = WritableNativeArray()
-        MONITORED_PACKAGES.forEach { pkg ->
+        CURATED_APPS.forEach { (pkg, fallbackName) ->
             try {
                 val appInfo = pm.getApplicationInfo(pkg, 0)
                 val map = WritableNativeMap().apply {
@@ -181,11 +217,24 @@ class UsageStatsModule(reactContext: ReactApplicationContext) :
     }
 
     /**
-     * Writes install date and monitored app list into the SharedPreferences
-     * that UsageMonitorService reads. Called once at the end of onboarding.
+     * Writes all monitor configuration to SharedPreferences.
+     * Called whenever the user changes monitored apps or intensity preset.
+     * The native service reads concrete numbers — it has no knowledge of preset names.
      */
     @ReactMethod
-    fun setMonitorPrefs(installDate: Double, monitoredPackages: ReadableArray, promise: Promise) {
+    fun setMonitorPrefs(
+        installDate: Double,
+        monitoredPackages: ReadableArray,
+        intensity: String,
+        sampleDays: Int,
+        weeklyReductionPct: Double,
+        nudgeBufferPct: Double,
+        frictionType: String,
+        cooldownMinutes: Int,
+        baselineCapMinutes: Int,
+        floorMinutes: Int,
+        promise: Promise
+    ) {
         try {
             val prefs = reactApplicationContext.getSharedPreferences(
                 "scrollguard_prefs", Context.MODE_PRIVATE
@@ -197,6 +246,14 @@ class UsageStatsModule(reactContext: ReactApplicationContext) :
             prefs.edit()
                 .putLong("installDate", installDate.toLong())
                 .putStringSet("monitoredApps", pkgSet)
+                .putString("intensity", intensity)
+                .putInt("sampleDays", sampleDays)
+                .putFloat("weeklyReductionPct", weeklyReductionPct.toFloat())
+                .putFloat("nudgeBufferPct", nudgeBufferPct.toFloat())
+                .putString("frictionType", frictionType)
+                .putInt("cooldownMinutes", cooldownMinutes)
+                .putInt("baselineCapMinutes", baselineCapMinutes)
+                .putInt("floorMinutes", floorMinutes)
                 .apply()
             promise.resolve(true)
         } catch (e: Exception) {

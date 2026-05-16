@@ -1,25 +1,13 @@
 apply plugin: "com.android.application"
 apply plugin: "org.jetbrains.kotlin.android"
 apply plugin: "com.facebook.react"
-// apply plugin: "com.google.gms.google-services"  // enable once google-services.json is added
 
 react {
-    /* Folders */
-    root = file("../../")
-    reactNativeDir = file("../../node_modules/react-native")
-    codegenDir = file("../../node_modules/@react-native/codegen")
-    cliFile = file("../../node_modules/react-native/cli.js")
-
-    /* Variants */
-    debuggableVariants = ["debug"]
-
-    /* Bundling */
-    bundleAssetName = "index.android.bundle"
-    entryFile = file("../../index.js")
-
-    /* Hermes */
-    hermesEnabled = true
+    // Defaults are correct for this project layout:
+    // root="..", entryFile="index.js", hermesEnabled via gradle.properties
 }
+
+def enableProguardInReleaseBuilds = false
 
 android {
     ndkVersion rootProject.ext.ndkVersion
@@ -31,10 +19,9 @@ android {
         applicationId "com.scrollguard"
         minSdk rootProject.ext.minSdkVersion
         targetSdk rootProject.ext.targetSdkVersion
-        versionCode 1
+        versionCode 3
         versionName "1.0.0"
     }
-
     signingConfigs {
         debug {
             storeFile file('debug.keystore')
@@ -42,24 +29,27 @@ android {
             keyAlias 'androiddebugkey'
             keyPassword 'android'
         }
+        release {
+            storeFile file('scrollguard-release.jks')
+            storePassword 'scrollguard123'
+            keyAlias 'scrollguard'
+            keyPassword 'scrollguard123'
+        }
     }
-
     buildTypes {
         debug {
             signingConfig signingConfigs.debug
         }
         release {
-            minifyEnabled true
+            signingConfig signingConfigs.release
+            minifyEnabled enableProguardInReleaseBuilds
             proguardFiles getDefaultProguardFile("proguard-android.txt"), "proguard-rules.pro"
-            signingConfig signingConfigs.debug
         }
     }
-
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
     }
-
     kotlinOptions {
         jvmTarget = "17"
     }
@@ -68,18 +58,11 @@ android {
 dependencies {
     implementation("com.facebook.react:react-android")
     implementation("com.facebook.react:hermes-android")
-
-    // Kotlin
     implementation("org.jetbrains.kotlin:kotlin-stdlib:${rootProject.ext.kotlinVersion}")
-
-    // AndroidX
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.appcompat:appcompat:1.7.0")
-
-    // Firebase — enable after adding google-services.json from Firebase Console
-    // implementation(platform("com.google.firebase:firebase-bom:33.1.2"))
-    // implementation("com.google.firebase:firebase-analytics")
-
-    // Expo modules
-    implementation project(':expo-modules-core')
 }
+
+apply from: file("../../node_modules/expo-modules-autolinking/scripts/android/autolinking_implementation.gradle"); addExpoModulesDependencies(dependencies, project)
+
+apply from: file("../../node_modules/@react-native-community/cli-platform-android/native_modules.gradle"); applyNativeModulesAppBuildGradle(project)

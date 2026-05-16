@@ -8,7 +8,6 @@ import android.app.Service
 import android.app.usage.UsageStatsManager
 import android.content.Context
 import android.content.Intent
-import android.content.SharedPreferences
 import android.os.Build
 import android.os.Handler
 import android.os.IBinder
@@ -16,41 +15,46 @@ import android.os.Looper
 import androidx.core.app.NotificationCompat
 import com.scrollguard.MainActivity
 import com.scrollguard.overlay.NudgeOverlayService
-import com.scrollguard.usagestats.UsageStatsModule
 
-/**
- * Long-running foreground service that:
- * 1. Polls UsageStatsManager every 60 seconds.
- * 2. Tracks per-app session time in memory (resets when the user switches apps).
- * 3. Fires nudges at 30-min and 60-min thresholds (Week 2+ behaviour).
- * 4. Accepts ACTION_APP_FOREGROUNDED from the AccessibilityService for faster detection.
- *
- * Week gating is read from SharedPreferences — the JS layer writes the install week.
- */
 class UsageMonitorService : Service() {
 
     companion object {
-        const val ACTION_START = "com.scrollguard.START_MONITOR"
-        const val ACTION_STOP = "com.scrollguard.STOP_MONITOR"
-        const val ACTION_APP_FOREGROUNDED = "com.scrollguard.APP_FOREGROUNDED"
-        const val EXTRA_PACKAGE_NAME = "packageName"
+        const val ACTION_START             = "com.scrollguard.START_MONITOR"
+        const val ACTION_STOP              = "com.scrollguard.STOP_MONITOR"
+        const val ACTION_APP_FOREGROUNDED  = "com.scrollguard.APP_FOREGROUNDED"
+        const val EXTRA_PACKAGE_NAME       = "packageName"
 
-        private const val CHANNEL_ID = "scrollguard_monitor"
-        private const val NOTIF_ID = 1001
-        private const val POLL_INTERVAL_MS = 60_000L // 1 minute
+        private const val CHANNEL_ID       = "scrollguard_monitor"
+        private const val NOTIF_ID         = 1001
+        private const val POLL_INTERVAL_MS = 60_000L
 
-        private const val PREFS_NAME = "scrollguard_prefs"
-        private const val PREF_INSTALL_DATE = "installDate"
-        private const val PREF_MONITORED_APPS = "monitoredApps"
+        private const val PREFS_NAME       = "scrollguard_prefs"
 
-        // Nudge thresholds in minutes
-        private val NUDGE_THRESHOLDS = listOf(30, 60)
+        // SharedPreferences keys — must match what UsageStatsModule writes
+        private const val KEY_INSTALL_DATE         = "installDate"
+        private const val KEY_MONITORED_APPS       = "monitoredApps"
+        private const val KEY_SAMPLE_DAYS          = "sampleDays"
+        private const val KEY_WEEKLY_REDUCTION_PCT = "weeklyReductionPct"
+        private const val KEY_NUDGE_BUFFER_PCT     = "nudgeBufferPct"
+        private const val KEY_FRICTION_TYPE        = "frictionType"
+        private const val KEY_COOLDOWN_MINUTES     = "cooldownMinutes"
+        private const val KEY_BASELINE_CAP_MIN     = "baselineCapMinutes"
+        private const val KEY_FLOOR_MINUTES        = "floorMinutes"
+
+        // Fallback defaults (mirrors 'balanced' preset) — used before JS writes prefs
+        private const val DEFAULT_SAMPLE_DAYS          = 4
+        private const val DEFAULT_WEEKLY_REDUCTION_PCT = 0.20f
+        private const val DEFAULT_NUDGE_BUFFER_PCT     = 0.10f
+        private const val DEFAULT_FRICTION_TYPE        = "soft"
+        private const val DEFAULT_COOLDOWN_MINUTES     = 30
+        private const val DEFAULT_BASELINE_CAP_MIN     = 180
+        private const val DEFAULT_FLOOR_MINUTES        = 30
     }
 
     private val handler = Handler(Looper.getMainLooper())
-    private val sessionStart = mutableMapOf<String, Long>() // pkg → session start timestamp
-    private val firedThresholds = mutableMapOf<String, MutableSet<Int>>() // pkg → fired minutes
-    private var currentForegroundPkg: String? = null
+
+    // pkg → last nudge timestamp (ms); enforces cooldown between nudges
+    private val lastNudgeAt = mutableMapOf<String, Long>()
 
     private val pollRunnable = object : Runnable {
         override fun run() {
@@ -69,104 +73,127 @@ class UsageMonitorService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        when (intent?.action) {
-            ACTION_APP_FOREGROUNDED -> {
-                val pkg = intent.getStringExtra(EXTRA_PACKAGE_NAME) ?: return START_STICKY
-                handleAppForegrounded(pkg)
-            }
-            ACTION_STOP -> stopSelf()
-        }
+        if (intent?.action == ACTION_STOP) stopSelf()
         return START_STICKY
     }
 
-    private fun handleAppForegrounded(pkg: String) {
-        if (pkg == currentForegroundPkg) return
-
-        currentForegroundPkg = pkg
-
-        if (pkg in getMonitoredApps()) {
-            // Start tracking session if not already started
-            if (!sessionStart.containsKey(pkg)) {
-                sessionStart[pkg] = System.currentTimeMillis()
-                firedThresholds.getOrPut(pkg) { mutableSetOf() }.clear()
-            }
-        }
-    }
+    // ─── Core nudge logic ────────────────────────────────────────────────────
 
     private fun checkUsageAndNudge() {
-        if (!shouldNudge()) return
-        val monitoredApps = getMonitoredApps()
+        val prefs       = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val installDate = prefs.getLong(KEY_INSTALL_DATE, 0L)
+        if (installDate == 0L) return
+
+        val monitoredApps = prefs.getStringSet(KEY_MONITORED_APPS, emptySet()) ?: return
         if (monitoredApps.isEmpty()) return
 
-        val now = System.currentTimeMillis()
-        val todayStart = getTodayStartMs()
+        val sampleDays        = prefs.getInt(KEY_SAMPLE_DAYS, DEFAULT_SAMPLE_DAYS)
+        val reductionPct      = prefs.getFloat(KEY_WEEKLY_REDUCTION_PCT, DEFAULT_WEEKLY_REDUCTION_PCT)
+        val bufferPct         = prefs.getFloat(KEY_NUDGE_BUFFER_PCT, DEFAULT_NUDGE_BUFFER_PCT)
+        val frictionType      = prefs.getString(KEY_FRICTION_TYPE, DEFAULT_FRICTION_TYPE) ?: DEFAULT_FRICTION_TYPE
+        val cooldownMs        = prefs.getInt(KEY_COOLDOWN_MINUTES, DEFAULT_COOLDOWN_MINUTES) * 60_000L
+        val baselineCapMs     = prefs.getInt(KEY_BASELINE_CAP_MIN, DEFAULT_BASELINE_CAP_MIN) * 60_000L
+        val floorMs           = prefs.getInt(KEY_FLOOR_MINUTES, DEFAULT_FLOOR_MINUTES) * 60_000L
 
-        val usm = getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
-        val stats = usm.queryUsageStats(
-            UsageStatsManager.INTERVAL_DAILY, todayStart, now
-        ) ?: return
+        val now           = System.currentTimeMillis()
+        val daysSinceInstall = (now - installDate) / 86_400_000L
 
-        // Aggregate usage per package
-        val usage = mutableMapOf<String, Long>()
-        stats.forEach { stat ->
-            if (stat.packageName in monitoredApps) {
-                usage[stat.packageName] =
-                    (usage[stat.packageName] ?: 0L) + stat.totalTimeInForeground
-            }
-        }
+        // Still in the sampling period — collect data, no nudges
+        if (daysSinceInstall < sampleDays) return
 
-        usage.forEach { (pkg, totalMs) ->
-            val minutes = (totalMs / 60_000L).toInt()
-            val fired = firedThresholds.getOrPut(pkg) { mutableSetOf() }
+        val todayStart    = getTodayStartMs()
+        val usm           = getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
 
-            NUDGE_THRESHOLDS.forEach { threshold ->
-                if (minutes >= threshold && threshold !in fired) {
-                    fired.add(threshold)
-                    fireNudge(pkg, minutes)
+        // Query today's usage
+        val todayStats    = usm.queryUsageStats(UsageStatsManager.INTERVAL_DAILY, todayStart, now)
+            ?: return
+        val todayUsage    = aggregateUsage(todayStats, monitoredApps)
+
+        // Compute each app's adaptive target for today
+        monitoredApps.forEach { pkg ->
+            val todayMs   = todayUsage[pkg] ?: 0L
+
+            // Baseline: average daily usage over the sample window, capped
+            val baselineMs = computeBaseline(usm, pkg, installDate, sampleDays, baselineCapMs)
+
+            // Week number (1-based). Target drops by reductionPct each week after sampling.
+            val weeksAfterSampling = ((daysSinceInstall - sampleDays) / 7L).toInt()
+            val targetMs = maxOf(
+                floorMs,
+                (baselineMs * Math.pow((1.0 - reductionPct).toDouble(), weeksAfterSampling.toDouble())).toLong()
+            )
+
+            // Nudge threshold = target * (1 + bufferPct)
+            val nudgeThresholdMs = (targetMs * (1.0 + bufferPct)).toLong()
+
+            if (todayMs >= nudgeThresholdMs) {
+                val lastNudge = lastNudgeAt[pkg] ?: 0L
+                if (now - lastNudge >= cooldownMs) {
+                    lastNudgeAt[pkg] = now
+                    val minutesOver = ((todayMs - targetMs) / 60_000L).toInt()
+                    fireNudge(pkg, (todayMs / 60_000L).toInt(), minutesOver, frictionType)
                 }
             }
         }
     }
 
-    private fun fireNudge(pkg: String, minutesUsed: Int) {
+    /**
+     * Computes average daily usage for [pkg] over the sample window.
+     * Uses INTERVAL_WEEKLY query for efficiency, then divides by sampleDays.
+     */
+    private fun computeBaseline(
+        usm: UsageStatsManager,
+        pkg: String,
+        installDate: Long,
+        sampleDays: Int,
+        baselineCapMs: Long,
+    ): Long {
+        val windowEnd   = installDate + sampleDays * 86_400_000L
+        val stats       = usm.queryUsageStats(UsageStatsManager.INTERVAL_DAILY, installDate, windowEnd)
+            ?: return baselineCapMs
+        val totalMs     = stats.filter { it.packageName == pkg }.sumOf { it.totalTimeInForeground }
+        val avgMs       = if (sampleDays > 0) totalMs / sampleDays else totalMs
+        return minOf(avgMs, baselineCapMs)
+    }
+
+    private fun aggregateUsage(
+        stats: List<android.app.usage.UsageStats>,
+        packages: Set<String>,
+    ): Map<String, Long> {
+        val result = mutableMapOf<String, Long>()
+        stats.forEach { stat ->
+            if (stat.packageName in packages) {
+                result[stat.packageName] =
+                    (result[stat.packageName] ?: 0L) + stat.totalTimeInForeground
+            }
+        }
+        return result
+    }
+
+    private fun fireNudge(pkg: String, minutesUsed: Int, minutesOver: Int, frictionType: String) {
         val appName = try {
             val info = packageManager.getApplicationInfo(pkg, 0)
             packageManager.getApplicationLabel(info).toString()
-        } catch (e: Exception) {
-            pkg
+        } catch (e: Exception) { pkg }
+
+        val message = when (frictionType) {
+            "hard"    -> "You're ${minutesOver}m over today's target. Tap to decide."
+            "soft"    -> "You're ${minutesOver}m over today's target. Opening in 5 seconds…"
+            else      -> "You're ${minutesOver}m over today's target. Worth a break?"
         }
 
-        val message = when {
-            minutesUsed >= 60 -> "You've been here over an hour. Your attention is worth more."
-            minutesUsed >= 30 -> "Half an hour in. How are you feeling about this?"
-            else -> "Just checking in."
-        }
-
-        val intent = Intent(this, NudgeOverlayService::class.java).apply {
-            action = NudgeOverlayService.ACTION_SHOW
-            putExtra(NudgeOverlayService.EXTRA_APP_NAME, appName)
-            putExtra(NudgeOverlayService.EXTRA_MINUTES_USED, minutesUsed)
-            putExtra(NudgeOverlayService.EXTRA_MESSAGE, message)
-        }
-        startService(intent)
+        startService(
+            Intent(this, NudgeOverlayService::class.java).apply {
+                action = NudgeOverlayService.ACTION_SHOW
+                putExtra(NudgeOverlayService.EXTRA_APP_NAME, appName)
+                putExtra(NudgeOverlayService.EXTRA_MINUTES_USED, minutesUsed)
+                putExtra(NudgeOverlayService.EXTRA_MESSAGE, message)
+                putExtra(NudgeOverlayService.EXTRA_FRICTION_TYPE, frictionType)
+            }
+        )
     }
 
-    /**
-     * Nudging only kicks in from Week 2 onwards (day 8+).
-     * Week is derived from install date stored in SharedPreferences.
-     */
-    private fun shouldNudge(): Boolean {
-        val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        val installDate = prefs.getLong(PREF_INSTALL_DATE, 0L)
-        if (installDate == 0L) return false
-        val daysSinceInstall = (System.currentTimeMillis() - installDate) / 86_400_000L
-        return daysSinceInstall >= 7
-    }
-
-    private fun getMonitoredApps(): Set<String> {
-        val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        return prefs.getStringSet(PREF_MONITORED_APPS, emptySet()) ?: emptySet()
-    }
+    // ─── Helpers ─────────────────────────────────────────────────────────────
 
     private fun getTodayStartMs(): Long {
         val cal = java.util.Calendar.getInstance().apply {
@@ -178,23 +205,25 @@ class UsageMonitorService : Service() {
         return cal.timeInMillis
     }
 
+    // ─── Notification / lifecycle ─────────────────────────────────────────────
+
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 CHANNEL_ID,
                 "ScrollGuard Monitor",
-                NotificationManager.IMPORTANCE_MIN // silent — no sound, no badge
+                NotificationManager.IMPORTANCE_MIN
             ).apply {
                 description = "Keeps usage tracking running in the background"
                 setShowBadge(false)
             }
-            val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-            nm.createNotificationChannel(channel)
+            (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager)
+                .createNotificationChannel(channel)
         }
     }
 
     private fun buildNotification(): Notification {
-        val launchIntent = PendingIntent.getActivity(
+        val launch = PendingIntent.getActivity(
             this, 0,
             Intent(this, MainActivity::class.java),
             PendingIntent.FLAG_IMMUTABLE
@@ -203,7 +232,7 @@ class UsageMonitorService : Service() {
             .setContentTitle("ScrollGuard is watching for you")
             .setContentText("Tracking your screen time in the background")
             .setSmallIcon(android.R.drawable.ic_menu_compass)
-            .setContentIntent(launchIntent)
+            .setContentIntent(launch)
             .setPriority(NotificationCompat.PRIORITY_MIN)
             .setSilent(true)
             .setOngoing(true)

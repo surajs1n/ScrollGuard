@@ -1,4 +1,5 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useState } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
 import {
   View,
   Text,
@@ -95,9 +96,11 @@ export default function DashboardScreen({ route, navigation }: Props) {
     );
   }, []);
 
-  useEffect(() => {
-    loadData();
-  }, [loadData]);
+  useFocusEffect(
+    useCallback(() => {
+      loadData();
+    }, [loadData])
+  );
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -129,8 +132,17 @@ export default function DashboardScreen({ route, navigation }: Props) {
         {/* Header */}
         <View style={styles.header}>
           <Text style={styles.headerTitle}>ScrollGuard</Text>
-          <View style={styles.weekBadge}>
-            <Text style={styles.weekText}>Week {currentWeek}</Text>
+          <View style={styles.headerRight}>
+            <View style={styles.weekBadge}>
+              <Text style={styles.weekText}>Week {currentWeek}</Text>
+            </View>
+            <TouchableOpacity
+              onPress={() => navigation.navigate('Settings')}
+              style={styles.gearBtn}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.gearIcon}>⚙</Text>
+            </TouchableOpacity>
           </View>
         </View>
 
@@ -242,6 +254,7 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.md,
   },
   headerTitle: { fontSize: font.lg, fontWeight: '700', color: colors.textPrimary },
+  headerRight: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   weekBadge: {
     backgroundColor: colors.surface,
     paddingHorizontal: spacing.sm,
@@ -249,6 +262,8 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   weekText: { color: colors.accent, fontSize: font.sm, fontWeight: '600' },
+  gearBtn: { padding: 4 },
+  gearIcon: { fontSize: 20, color: colors.textSecondary },
   observerBanner: {
     backgroundColor: colors.surface,
     borderRadius: 12,
