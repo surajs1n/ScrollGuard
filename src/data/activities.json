@@ -1,0 +1,182 @@
+[
+  {
+    "id": "walk_10",
+    "label": "Go for a 10-minute walk",
+    "durationMin": 10,
+    "category": "movement"
+  },
+  {
+    "id": "pushups_20",
+    "label": "Do 20 push-ups",
+    "durationMin": 5,
+    "category": "movement"
+  },
+  {
+    "id": "stretch_5",
+    "label": "Stretch for 5 minutes",
+    "durationMin": 5,
+    "category": "movement"
+  },
+  {
+    "id": "yoga_10",
+    "label": "Do 10 minutes of yoga",
+    "durationMin": 10,
+    "category": "movement"
+  },
+  {
+    "id": "gym",
+    "label": "Go to the gym",
+    "durationMin": 45,
+    "category": "movement"
+  },
+  {
+    "id": "plank_2",
+    "label": "Hold a 2-minute plank",
+    "durationMin": 2,
+    "category": "movement"
+  },
+  {
+    "id": "read_5pages",
+    "label": "Read 5 pages of a book",
+    "durationMin": 10,
+    "category": "mind"
+  },
+  {
+    "id": "journal_5",
+    "label": "Journal for 5 minutes",
+    "durationMin": 5,
+    "category": "mind"
+  },
+  {
+    "id": "meditate_5",
+    "label": "Meditate for 5 minutes",
+    "durationMin": 5,
+    "category": "mind"
+  },
+  {
+    "id": "breathing_478",
+    "label": "Try the 4-7-8 breathing technique",
+    "durationMin": 5,
+    "category": "mind"
+  },
+  {
+    "id": "gratitude",
+    "label": "Write down 3 things you're grateful for",
+    "durationMin": 5,
+    "category": "mind"
+  },
+  {
+    "id": "priorities",
+    "label": "Write your top 3 priorities for today",
+    "durationMin": 5,
+    "category": "mind"
+  },
+  {
+    "id": "plan_tomorrow",
+    "label": "Plan tomorrow's schedule",
+    "durationMin": 10,
+    "category": "mind"
+  },
+  {
+    "id": "learn_word",
+    "label": "Learn a new word in any language",
+    "durationMin": 5,
+    "category": "mind"
+  },
+  {
+    "id": "chai",
+    "label": "Make a cup of chai — from scratch",
+    "durationMin": 10,
+    "category": "offline"
+  },
+  {
+    "id": "cook_new",
+    "label": "Try cooking a new recipe",
+    "durationMin": 30,
+    "category": "offline"
+  },
+  {
+    "id": "tidy_desk",
+    "label": "Tidy up your desk or room",
+    "durationMin": 10,
+    "category": "offline"
+  },
+  {
+    "id": "water_plants",
+    "label": "Water your plants",
+    "durationMin": 5,
+    "category": "offline"
+  },
+  {
+    "id": "cold_shower",
+    "label": "Take a cold shower",
+    "durationMin": 10,
+    "category": "offline"
+  },
+  {
+    "id": "face_wash",
+    "label": "Splash cold water on your face",
+    "durationMin": 2,
+    "category": "offline"
+  },
+  {
+    "id": "doodle",
+    "label": "Sketch or doodle anything",
+    "durationMin": 10,
+    "category": "creative"
+  },
+  {
+    "id": "instrument",
+    "label": "Practice a musical instrument for 10 minutes",
+    "durationMin": 10,
+    "category": "creative"
+  },
+  {
+    "id": "music_intentional",
+    "label": "Listen to music with your eyes closed — no screen",
+    "durationMin": 10,
+    "category": "creative"
+  },
+  {
+    "id": "call_friend",
+    "label": "Call a friend or family member",
+    "durationMin": 10,
+    "category": "social"
+  },
+  {
+    "id": "voice_note",
+    "label": "Send a voice note to someone you haven't talked to in a while",
+    "durationMin": 5,
+    "category": "social"
+  },
+  {
+    "id": "review_todos",
+    "label": "Review your to-do list and cross off one thing",
+    "durationMin": 5,
+    "category": "productivity"
+  },
+  {
+    "id": "inbox_zero",
+    "label": "Clear 10 emails from your inbox",
+    "durationMin": 10,
+    "category": "productivity"
+  },
+  {
+    "id": "gardening",
+    "label": "Do a little gardening or balcony maintenance",
+    "durationMin": 15,
+    "category": "offline"
+  },
+  {
+    "id": "walk_30",
+    "label": "Take a 30-minute walk — no headphones",
+    "durationMin": 30,
+    "category": "movement"
+  },
+  {
+    "id": "read_article",
+    "label": "Read one long-form article (not on social media)",
+    "durationMin": 15,
+    "category": "mind"
+  }
+]

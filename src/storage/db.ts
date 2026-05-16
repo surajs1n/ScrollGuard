@@ -1,0 +1,195 @@
+import * as SQLite from 'expo-sqlite';
+
+let _db: SQLite.SQLiteDatabase | null = null;
+
+async function getDb(): Promise<SQLite.SQLiteDatabase> {
+  if (!_db) {
+    _db = await SQLite.openDatabaseAsync('scrollguard.db');
+    await initSchema(_db);
+  }
+  return _db;
+}
+
+async function initSchema(db: SQLite.SQLiteDatabase): Promise<void> {
+  await db.execAsync(`
+    PRAGMA journal_mode = WAL;
+
+    -- Daily usage snapshots per app
+    CREATE TABLE IF NOT EXISTS usage_snapshots (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      date TEXT NOT NULL,          -- YYYY-MM-DD
+      package_name TEXT NOT NULL,
+      app_name TEXT NOT NULL,
+      total_time_ms INTEGER NOT NULL DEFAULT 0,
+      created_at INTEGER NOT NULL DEFAULT (strftime('%s','now') * 1000)
+    );
+
+    -- Unique snapshot per day per app
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_usage_date_pkg
+      ON usage_snapshots(date, package_name);
+
+    -- Activity log: when the user tapped "I did it"
+    CREATE TABLE IF NOT EXISTS activity_completions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      date TEXT NOT NULL,
+      activity_id TEXT NOT NULL,
+      activity_label TEXT NOT NULL,
+      completed_at INTEGER NOT NULL DEFAULT (strftime('%s','now') * 1000)
+    );
+
+    -- Streak tracking (updated daily by JS)
+    CREATE TABLE IF NOT EXISTS streaks (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      current_streak INTEGER NOT NULL DEFAULT 0,
+      longest_streak INTEGER NOT NULL DEFAULT 0,
+      last_active_date TEXT
+    );
+
+    INSERT OR IGNORE INTO streaks (id, current_streak, longest_streak)
+      VALUES (1, 0, 0);
+  `);
+}
+
+// ─── Usage Snapshots ────────────────────────────────────────────────────────
+
+export interface UsageSnapshot {
+  date: string;
+  packageName: string;
+  appName: string;
+  totalTimeMs: number;
+}
+
+export async function upsertUsageSnapshot(snap: UsageSnapshot): Promise<void> {
+  const db = await getDb();
+  await db.runAsync(
+    `INSERT INTO usage_snapshots (date, package_name, app_name, total_time_ms)
+     VALUES (?, ?, ?, ?)
+     ON CONFLICT(date, package_name)
+     DO UPDATE SET total_time_ms = excluded.total_time_ms,
+                   app_name = excluded.app_name`,
+    snap.date,
+    snap.packageName,
+    snap.appName,
+    snap.totalTimeMs
+  );
+}
+
+export async function getUsageForDate(date: string): Promise<UsageSnapshot[]> {
+  const db = await getDb();
+  const rows = await db.getAllAsync<{
+    date: string;
+    package_name: string;
+    app_name: string;
+    total_time_ms: number;
+  }>(
+    'SELECT * FROM usage_snapshots WHERE date = ? ORDER BY total_time_ms DESC',
+    date
+  );
+  return rows.map((r) => ({
+    date: r.date,
+    packageName: r.package_name,
+    appName: r.app_name,
+    totalTimeMs: r.total_time_ms,
+  }));
+}
+
+// ─── Activity Completions ────────────────────────────────────────────────────
+
+export async function logActivityCompletion(
+  activityId: string,
+  activityLabel: string
+): Promise<void> {
+  const db = await getDb();
+  const today = todayString();
+  await db.runAsync(
+    `INSERT INTO activity_completions (date, activity_id, activity_label)
+     VALUES (?, ?, ?)`,
+    today,
+    activityId,
+    activityLabel
+  );
+}
+
+export async function getActivityCompletionsForDate(
+  date: string
+): Promise<{ activityId: string; activityLabel: string; completedAt: number }[]> {
+  const db = await getDb();
+  const rows = await db.getAllAsync<{
+    activity_id: string;
+    activity_label: string;
+    completed_at: number;
+  }>(
+    'SELECT activity_id, activity_label, completed_at FROM activity_completions WHERE date = ?',
+    date
+  );
+  return rows.map((r) => ({
+    activityId: r.activity_id,
+    activityLabel: r.activity_label,
+    completedAt: r.completed_at,
+  }));
+}
+
+// ─── Streaks ─────────────────────────────────────────────────────────────────
+
+export interface StreakData {
+  currentStreak: number;
+  longestStreak: number;
+  lastActiveDate: string | null;
+}
+
+export async function getStreak(): Promise<StreakData> {
+  const db = await getDb();
+  const row = await db.getFirstAsync<{
+    current_streak: number;
+    longest_streak: number;
+    last_active_date: string | null;
+  }>('SELECT * FROM streaks WHERE id = 1');
+  return {
+    currentStreak: row?.current_streak ?? 0,
+    longestStreak: row?.longest_streak ?? 0,
+    lastActiveDate: row?.last_active_date ?? null,
+  };
+}
+
+/**
+ * Call this once per day when the user has completed at least one activity.
+ * Increments the streak; resets to 1 if a day was missed.
+ */
+export async function recordStreakDay(): Promise<StreakData> {
+  const db = await getDb();
+  const today = todayString();
+  const streak = await getStreak();
+
+  if (streak.lastActiveDate === today) return streak; // already recorded today
+
+  const yesterday = yesterdayString();
+  const newCurrent =
+    streak.lastActiveDate === yesterday ? streak.currentStreak + 1 : 1;
+  const newLongest = Math.max(streak.longestStreak, newCurrent);
+
+  await db.runAsync(
+    `UPDATE streaks SET current_streak = ?, longest_streak = ?, last_active_date = ?
+     WHERE id = 1`,
+    newCurrent,
+    newLongest,
+    today
+  );
+
+  return {
+    currentStreak: newCurrent,
+    longestStreak: newLongest,
+    lastActiveDate: today,
+  };
+}
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+export function todayString(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+export function yesterdayString(): string {
+  const d = new Date();
+  d.setDate(d.getDate() - 1);
+  return d.toISOString().slice(0, 10);
+}

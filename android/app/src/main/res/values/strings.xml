@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">ScrollGuard</string>
+    <string name="accessibility_service_description">ScrollGuard uses accessibility to detect when you open monitored apps so it can show timely nudges. No keystrokes or personal content are ever read.</string>
+</resources>
