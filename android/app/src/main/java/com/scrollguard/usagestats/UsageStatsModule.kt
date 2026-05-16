@@ -86,7 +86,7 @@ class UsageStatsModule(reactContext: ReactApplicationContext) :
                 .getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
 
             val stats: List<UsageStats> = usm.queryUsageStats(
-                UsageStatsManager.INTERVAL_DAILY,
+                UsageStatsManager.INTERVAL_BEST,
                 startTime.toLong(),
                 endTime.toLong()
             ) ?: emptyList()
@@ -120,8 +120,11 @@ class UsageStatsModule(reactContext: ReactApplicationContext) :
             val usm = reactApplicationContext
                 .getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
 
+            // INTERVAL_BEST lets Android choose the finest granularity for the given
+            // time range. INTERVAL_DAILY over a within-day window returns overlapping
+            // bucket entries that cause the same session to be counted multiple times.
             val allStats: List<UsageStats> = usm.queryUsageStats(
-                UsageStatsManager.INTERVAL_DAILY,
+                UsageStatsManager.INTERVAL_BEST,
                 startTime.toLong(),
                 endTime.toLong()
             ) ?: emptyList()
