@@ -60,6 +60,16 @@ export const UsageStats = {
     return Native.getCuratedAppsWithStatus();
   },
 
+  /**
+   * Returns all user-installed apps NOT in the curated list.
+   * Excludes system apps and apps without a launcher icon.
+   */
+  getInstalledUserApps(): Promise<InstalledApp[]> {
+    assertAndroid();
+    if (typeof Native.getInstalledUserApps !== 'function') return Promise.resolve([]);
+    return Native.getInstalledUserApps();
+  },
+
   /** Convenience: returns usage for today (midnight → now). */
   getTodayUsage(): Promise<AppUsage[]> {
     const now = Date.now();

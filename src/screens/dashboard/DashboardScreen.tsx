@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
 import {
   View,
@@ -10,22 +10,31 @@ import {
   RefreshControl,
   StatusBar,
   Alert,
+  AppState,
+  AppStateStatus,
 } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../navigation/AppNavigator';
 import { UsageStats, AppUsage } from '../../modules/UsageStats';
 import {
-  getUsageForDate,
-  upsertUsageSnapshot,
   getStreak,
   getActivityCompletionsForDate,
   logActivityCompletion,
+  removeActivityCompletion,
   recordStreakDay,
+  getWeeklyUsageTotals,
+  upsertUsageSnapshot,
   todayString,
-  yesterdayString,
   StreakData,
 } from '../../storage/db';
 import { MonitorService } from '../../modules/MonitorService';
+import {
+  INTENSITY_PRESETS,
+  INTENSITY_MESSAGES,
+  getBannerPhase,
+  DEFAULT_INTENSITY,
+  IntensityLevel,
+} from '../../config/intensityPresets';
 import activities from '../../data/activities.json';
 import { colors, spacing, font } from '../../theme';
 
@@ -39,6 +48,8 @@ interface Activity {
 }
 
 const ALL_ACTIVITIES: Activity[] = activities as Activity[];
+const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+const BAR_CHART_HEIGHT = 120;
 
 function msToMinutes(ms: number): number {
   return Math.round(ms / 60_000);
@@ -52,9 +63,132 @@ function formatMinutes(min: number): string {
 }
 
 function pickRandomActivities(count = 3): Activity[] {
-  const shuffled = [...ALL_ACTIVITIES].sort(() => Math.random() - 0.5);
-  return shuffled.slice(0, count);
+  return [...ALL_ACTIVITIES].sort(() => Math.random() - 0.5).slice(0, count);
 }
+
+function weekRangeLabel(data: { date: string }[]): string {
+  if (data.length < 7) return '';
+  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const s = new Date(data[0].date);
+  const e = new Date(data[6].date);
+  if (s.getMonth() === e.getMonth()) {
+    return `${months[s.getMonth()]} ${s.getDate()} – ${e.getDate()}`;
+  }
+  return `${months[s.getMonth()]} ${s.getDate()} – ${months[e.getMonth()]} ${e.getDate()}`;
+}
+
+function WeeklyBarChart({
+  data,
+  selectedDay,
+  onDayPress,
+}: {
+  data: { date: string; totalMs: number }[];
+  selectedDay: number | null;
+  onDayPress: (i: number | null) => void;
+}) {
+  if (data.length < 7) return null;
+  const maxMs = Math.max(...data.map((d) => d.totalMs), 60_000);
+
+  return (
+    <View>
+      <View style={chartStyles.barsRow}>
+        {data.map((d, i) => {
+          const ratio = d.totalMs / maxMs;
+          const barH = Math.max(4, ratio * BAR_CHART_HEIGHT);
+          const isSelected = selectedDay === i;
+          return (
+            <TouchableOpacity
+              key={i}
+              style={chartStyles.barCol}
+              onPress={() => onDayPress(isSelected ? null : i)}
+              activeOpacity={0.7}
+            >
+              {isSelected && d.totalMs > 0 && (
+                <Text style={chartStyles.barTooltip}>
+                  {formatMinutes(msToMinutes(d.totalMs))}
+                </Text>
+              )}
+              <View style={chartStyles.barTrack}>
+                <View
+                  style={[
+                    chartStyles.bar,
+                    { height: barH },
+                    isSelected ? chartStyles.barSelected : chartStyles.barDefault,
+                  ]}
+                />
+              </View>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+      <View style={chartStyles.labelsRow}>
+        {DAY_LABELS.map((label, i) => (
+          <Text
+            key={i}
+            style={[
+              chartStyles.dayLabel,
+              selectedDay === i && chartStyles.dayLabelSelected,
+            ]}
+          >
+            {label}
+          </Text>
+        ))}
+      </View>
+    </View>
+  );
+}
+
+const chartStyles = StyleSheet.create({
+  barsRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    height: BAR_CHART_HEIGHT + 24, // extra room for tooltip
+    gap: 5,
+  },
+  barCol: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    height: BAR_CHART_HEIGHT + 24,
+  },
+  barTooltip: {
+    color: colors.textPrimary,
+    fontSize: 10,
+    fontWeight: '700',
+    marginBottom: 3,
+    backgroundColor: colors.bg,
+    paddingHorizontal: 4,
+    paddingVertical: 1,
+    borderRadius: 4,
+    overflow: 'hidden',
+  },
+  barTrack: {
+    width: '100%',
+    height: BAR_CHART_HEIGHT,
+    justifyContent: 'flex-end',
+  },
+  bar: {
+    width: '100%',
+    borderRadius: 4,
+  },
+  barDefault: { backgroundColor: colors.accent, opacity: 0.65 },
+  barSelected: { backgroundColor: colors.accentLight, opacity: 1 },
+  labelsRow: {
+    flexDirection: 'row',
+    marginTop: 6,
+    gap: 5,
+  },
+  dayLabel: {
+    flex: 1,
+    textAlign: 'center',
+    fontSize: 10,
+    color: colors.textSecondary,
+  },
+  dayLabelSelected: {
+    color: colors.accentLight,
+    fontWeight: '700',
+  },
+});
 
 export default function DashboardScreen({ route, navigation }: Props) {
   const openSuggestion = route.params?.openSuggestion ?? false;
@@ -65,16 +199,24 @@ export default function DashboardScreen({ route, navigation }: Props) {
   const [completedToday, setCompletedToday] = useState<string[]>([]);
   const [suggestedActivities] = useState<Activity[]>(() => pickRandomActivities(3));
   const [currentWeek, setCurrentWeek] = useState(1);
+  const [daysSinceInstall, setDaysSinceInstall] = useState(0);
+  const [intensity, setIntensity] = useState<IntensityLevel>(DEFAULT_INTENSITY);
+  const [weeklyData, setWeeklyData] = useState<{ date: string; totalMs: number }[]>([]);
+  const [chartWeekOffset, setChartWeekOffset] = useState(0);
+  const [selectedChartDay, setSelectedChartDay] = useState<number | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [showSuggestions, setShowSuggestions] = useState(openSuggestion);
 
   const loadData = useCallback(async () => {
-    const [today, yesterday, streakData, completions, week] = await Promise.all([
+    const [today, yesterday, streakData, completions, week, weekData, lvl, installDate] = await Promise.all([
       UsageStats.getTodayUsage().catch(() => []),
       UsageStats.getYesterdayUsage().catch(() => []),
       getStreak(),
       getActivityCompletionsForDate(todayString()),
       MonitorService.getCurrentWeek(),
+      getWeeklyUsageTotals(0),
+      MonitorService.getIntensity(),
+      MonitorService.getInstallDate(),
     ]);
 
     setTodayUsage(today);
@@ -82,8 +224,14 @@ export default function DashboardScreen({ route, navigation }: Props) {
     setStreak(streakData);
     setCompletedToday(completions.map((c) => c.activityId));
     setCurrentWeek(week);
+    setIntensity(lvl);
+    setDaysSinceInstall(
+      installDate ? Math.floor((Date.now() - installDate) / 86_400_000) : 0
+    );
+    setWeeklyData(weekData);
+    setChartWeekOffset(0);
+    setSelectedChartDay(null);
 
-    // Persist today's snapshot to SQLite
     await Promise.all(
       today.map((u) =>
         upsertUsageSnapshot({
@@ -102,6 +250,22 @@ export default function DashboardScreen({ route, navigation }: Props) {
     }, [loadData])
   );
 
+  // Fix 4: refresh when returning from task switcher
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (state: AppStateStatus) => {
+      if (state === 'active') loadData();
+    });
+    return () => sub.remove();
+  }, [loadData]);
+
+  const handleChartWeekChange = useCallback(async (newOffset: number) => {
+    if (newOffset > 0) return;
+    setChartWeekOffset(newOffset);
+    setSelectedChartDay(null);
+    const data = await getWeeklyUsageTotals(newOffset);
+    setWeeklyData(data);
+  }, []);
+
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     await loadData();
@@ -109,7 +273,24 @@ export default function DashboardScreen({ route, navigation }: Props) {
   }, [loadData]);
 
   const handleActivityDone = async (activity: Activity) => {
-    if (completedToday.includes(activity.id)) return;
+    if (completedToday.includes(activity.id)) {
+      Alert.alert(
+        'Undo completion?',
+        `Unmark "${activity.label}" as done?`,
+        [
+          { text: 'Keep it', style: 'cancel' },
+          {
+            text: 'Undo',
+            style: 'destructive',
+            onPress: async () => {
+              await removeActivityCompletion(activity.id);
+              setCompletedToday((prev) => prev.filter((id) => id !== activity.id));
+            },
+          },
+        ]
+      );
+      return;
+    }
     await logActivityCompletion(activity.id, activity.label);
     const newStreak = await recordStreakDay();
     setCompletedToday((prev) => [...prev, activity.id]);
@@ -136,6 +317,7 @@ export default function DashboardScreen({ route, navigation }: Props) {
             <View style={styles.weekBadge}>
               <Text style={styles.weekText}>Week {currentWeek}</Text>
             </View>
+            {/* Fix 3: bigger, vivid gear icon */}
             <TouchableOpacity
               onPress={() => navigation.navigate('Settings')}
               style={styles.gearBtn}
@@ -146,37 +328,90 @@ export default function DashboardScreen({ route, navigation }: Props) {
           </View>
         </View>
 
-        {/* Week 1 observer mode banner */}
-        {currentWeek === 1 && (
-          <View style={styles.observerBanner}>
-            <Text style={styles.observerTitle}>Observer mode 👁</Text>
-            <Text style={styles.observerBody}>
-              This week ScrollGuard is watching silently — no nudges yet. Just honest data.
-            </Text>
-          </View>
-        )}
+        {/* Phase-aware personalised banner */}
+        {(() => {
+          const preset = INTENSITY_PRESETS[intensity];
+          const phase = getBannerPhase(daysSinceInstall, currentWeek, preset);
+          const msg = INTENSITY_MESSAGES[intensity][phase];
+          const borderColor = {
+            observer:    colors.accent,
+            active:      colors.success,
+            progress:    colors.warning,
+            maintenance: colors.success,
+          }[phase];
+          return (
+            <View style={[styles.phaseBanner, { borderLeftColor: borderColor }]}>
+              <Text style={styles.phaseBannerTitle}>{msg.title(preset, currentWeek)}</Text>
+              <Text style={styles.phaseBannerBody}>{msg.body(preset, currentWeek)}</Text>
+            </View>
+          );
+        })()}
 
-        {/* Streak card */}
-        <View style={styles.streakCard}>
-          <Text style={styles.streakNumber}>{streak.currentStreak}</Text>
-          <Text style={styles.streakLabel}>day streak</Text>
-          {streak.longestStreak > 0 && (
-            <Text style={styles.streakBest}>best: {streak.longestStreak}</Text>
-          )}
+        {/* Fix 5: Weekly bar chart */}
+        <View style={styles.chartCard}>
+          <View style={styles.chartNav}>
+            {/* Left half: Today pill — only visible when browsing past weeks */}
+            <View style={styles.chartNavLeft}>
+              {chartWeekOffset < 0 && (
+                <TouchableOpacity
+                  onPress={() => handleChartWeekChange(0)}
+                  style={styles.todayBtn}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.todayBtnText}>Current week</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+            {/* Right half: ‹ date range › */}
+            <View style={styles.chartNavRight}>
+              <TouchableOpacity
+                onPress={() => handleChartWeekChange(chartWeekOffset - 1)}
+                style={styles.navBtn}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.navArrow}>‹</Text>
+              </TouchableOpacity>
+              <Text style={styles.chartRangeLabel}>{weekRangeLabel(weeklyData)}</Text>
+              <TouchableOpacity
+                onPress={() => handleChartWeekChange(chartWeekOffset + 1)}
+                style={styles.navBtn}
+                disabled={chartWeekOffset >= 0}
+                activeOpacity={chartWeekOffset < 0 ? 0.7 : 0.3}
+              >
+                <Text style={[styles.navArrow, chartWeekOffset >= 0 && styles.navArrowDisabled]}>›</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+          <WeeklyBarChart
+            data={weeklyData}
+            selectedDay={selectedChartDay}
+            onDayPress={(i) => setSelectedChartDay(i)}
+          />
         </View>
 
-        {/* Today vs yesterday */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Today's screen time</Text>
-          <View style={styles.totalRow}>
-            <Text style={styles.totalTime}>{formatMinutes(msToMinutes(todayTotal))}</Text>
+        {/* Fix 5: Streak + today's total side-by-side */}
+        <View style={styles.twinRow}>
+          <View style={[styles.twinCard, { marginRight: spacing.sm / 2 }]}>
+            <Text style={styles.twinValue}>{streak.currentStreak}</Text>
+            <Text style={styles.twinLabel}>day streak 🔥</Text>
+            {streak.longestStreak > 0 && (
+              <Text style={styles.twinSub}>best: {streak.longestStreak}</Text>
+            )}
+          </View>
+          <View style={[styles.twinCard, { marginLeft: spacing.sm / 2 }]}>
+            <Text style={styles.twinValue}>{formatMinutes(msToMinutes(todayTotal))}</Text>
+            <Text style={styles.twinLabel}>today's total</Text>
             {yesterdayTotal > 0 && (
-              <Text style={[styles.delta, delta > 0 ? styles.deltaUp : styles.deltaDown]}>
-                {delta > 0 ? '↑' : '↓'} {formatMinutes(Math.abs(msToMinutes(delta)))} vs yesterday
+              <Text style={[styles.twinSub, delta > 0 ? styles.deltaUp : styles.deltaDown]}>
+                {delta > 0 ? '↑' : '↓'} {formatMinutes(Math.abs(msToMinutes(delta)))} vs yday
               </Text>
             )}
           </View>
+        </View>
 
+        {/* Per-app breakdown */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Today's breakdown</Text>
           {todayUsage.length === 0 ? (
             <Text style={styles.emptyMsg}>No usage data yet. Pull to refresh.</Text>
           ) : (
@@ -208,11 +443,17 @@ export default function DashboardScreen({ route, navigation }: Props) {
             <Text style={styles.sectionToggle}>{showSuggestions ? '▲' : '▼'}</Text>
           </TouchableOpacity>
 
+          {/* Fix 6: tapping a completed card prompts undo */}
           {showSuggestions &&
             suggestedActivities.map((activity) => {
               const done = completedToday.includes(activity.id);
               return (
-                <View key={activity.id} style={[styles.activityCard, done && styles.activityDone]}>
+                <TouchableOpacity
+                  key={activity.id}
+                  style={[styles.activityCard, done && styles.activityDone]}
+                  onPress={() => handleActivityDone(activity)}
+                  activeOpacity={0.75}
+                >
                   <View style={styles.activityInfo}>
                     <Text style={[styles.activityLabel, done && styles.activityLabelDone]}>
                       {activity.label}
@@ -221,20 +462,14 @@ export default function DashboardScreen({ route, navigation }: Props) {
                       ~{activity.durationMin} min · {activity.category}
                     </Text>
                   </View>
-                  <TouchableOpacity
-                    style={[styles.doneBtn, done && styles.doneBtnDone]}
-                    onPress={() => handleActivityDone(activity)}
-                    disabled={done}
-                    activeOpacity={0.75}
-                  >
+                  <View style={[styles.doneBtn, done && styles.doneBtnDone]}>
                     <Text style={styles.doneBtnText}>{done ? '✓' : 'I did it'}</Text>
-                  </TouchableOpacity>
-                </View>
+                  </View>
+                </TouchableOpacity>
               );
             })}
         </View>
 
-        {/* Privacy footer */}
         <Text style={styles.privacyFooter}>
           All data stays on your device. Nothing is sent anywhere.
         </Text>
@@ -246,6 +481,7 @@ export default function DashboardScreen({ route, navigation }: Props) {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
   scroll: { paddingHorizontal: spacing.lg, paddingBottom: spacing.xxl },
+
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -263,27 +499,64 @@ const styles = StyleSheet.create({
   },
   weekText: { color: colors.accent, fontSize: font.sm, fontWeight: '600' },
   gearBtn: { padding: 4 },
-  gearIcon: { fontSize: 20, color: colors.textSecondary },
-  observerBanner: {
+  gearIcon: { fontSize: 28, color: colors.accentLight },
+
+  phaseBanner: {
     backgroundColor: colors.surface,
     borderRadius: 12,
     padding: spacing.md,
     marginBottom: spacing.lg,
     borderLeftWidth: 3,
-    borderLeftColor: colors.accent,
+    borderLeftColor: colors.accent, // overridden inline per phase
   },
-  observerTitle: { color: colors.textPrimary, fontWeight: '600', marginBottom: 4 },
-  observerBody: { color: colors.textSecondary, fontSize: font.sm, lineHeight: 20 },
-  streakCard: {
+  phaseBannerTitle: { color: colors.textPrimary, fontWeight: '600', marginBottom: 4 },
+  phaseBannerBody: { color: colors.textSecondary, fontSize: font.sm, lineHeight: 20 },
+
+  chartCard: {
     backgroundColor: colors.surface,
     borderRadius: 16,
-    padding: spacing.lg,
-    alignItems: 'center',
-    marginBottom: spacing.lg,
+    padding: spacing.md,
+    marginBottom: spacing.md,
   },
-  streakNumber: { fontSize: 48, fontWeight: '800', color: colors.accent },
-  streakLabel: { fontSize: font.md, color: colors.textSecondary, marginTop: 4 },
-  streakBest: { fontSize: font.xs, color: colors.textSecondary, marginTop: 4 },
+  chartNav: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: spacing.sm,
+  },
+  chartNavLeft: { flex: 1, alignItems: 'flex-start' },
+  chartNavRight: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  todayBtn: {
+    backgroundColor: `${colors.accent}22`,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 5,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: colors.accent,
+  },
+  todayBtnText: { color: colors.accentLight, fontSize: font.xs, fontWeight: '700' },
+  navBtn: { width: 28, alignItems: 'center', justifyContent: 'center', paddingVertical: 4 },
+  navArrow: { fontSize: 22, color: colors.accentLight, fontWeight: '600' },
+  navArrowDisabled: { color: colors.border },
+  chartRangeLabel: { flex: 1, textAlign: 'center', fontSize: font.sm, fontWeight: '600', color: colors.textSecondary },
+
+  twinRow: { flexDirection: 'row', marginBottom: spacing.lg },
+  twinCard: {
+    flex: 1,
+    backgroundColor: colors.surface,
+    borderRadius: 16,
+    padding: spacing.md,
+    alignItems: 'center',
+  },
+  twinValue: { fontSize: font.xxl, fontWeight: '800', color: colors.accent },
+  twinLabel: { fontSize: font.xs, color: colors.textSecondary, marginTop: 4, textAlign: 'center' },
+  twinSub: { fontSize: font.xs, color: colors.textSecondary, marginTop: 4 },
+  deltaUp: { color: colors.danger },
+  deltaDown: { color: colors.success },
+
   section: { marginBottom: spacing.lg },
   sectionHeader: {
     flexDirection: 'row',
@@ -291,19 +564,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: spacing.sm,
   },
-  sectionTitle: { fontSize: font.lg, fontWeight: '700', color: colors.textPrimary },
+  sectionTitle: { fontSize: font.lg, fontWeight: '700', color: colors.textPrimary, marginBottom: spacing.sm },
   sectionToggle: { color: colors.textSecondary, fontSize: font.md },
-  totalRow: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
-    gap: spacing.sm,
-    marginBottom: spacing.md,
-  },
-  totalTime: { fontSize: font.xxl, fontWeight: '800', color: colors.textPrimary },
-  delta: { fontSize: font.sm, fontWeight: '600' },
-  deltaUp: { color: colors.danger },
-  deltaDown: { color: colors.success },
-  emptyMsg: { color: colors.textSecondary, fontSize: font.sm, marginTop: spacing.sm },
+
   appRow: {
     backgroundColor: colors.surface,
     borderRadius: 12,
@@ -317,6 +580,8 @@ const styles = StyleSheet.create({
   appName: { fontSize: font.md, fontWeight: '600', color: colors.textPrimary },
   appTime: { fontSize: font.sm, color: colors.accent, marginTop: 2 },
   appYest: { fontSize: font.xs, color: colors.textSecondary },
+  emptyMsg: { color: colors.textSecondary, fontSize: font.sm, marginTop: spacing.sm },
+
   activityCard: {
     backgroundColor: colors.surface,
     borderRadius: 12,
@@ -326,7 +591,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: spacing.sm,
   },
-  activityDone: { opacity: 0.5 },
+  activityDone: { opacity: 0.55 },
   activityInfo: { flex: 1 },
   activityLabel: { fontSize: font.md, color: colors.textPrimary, fontWeight: '500' },
   activityLabelDone: { textDecorationLine: 'line-through' },
@@ -339,6 +604,7 @@ const styles = StyleSheet.create({
   },
   doneBtnDone: { backgroundColor: colors.success },
   doneBtnText: { color: '#fff', fontSize: font.sm, fontWeight: '600' },
+
   privacyFooter: {
     color: colors.textSecondary,
     fontSize: font.xs,

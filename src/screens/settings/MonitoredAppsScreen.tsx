@@ -1,56 +1,65 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
   SafeAreaView,
-  FlatList,
+  SectionList,
+  TextInput,
   ActivityIndicator,
   Alert,
   StatusBar,
 } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../navigation/AppNavigator';
-import { UsageStats, CuratedApp } from '../../modules/UsageStats';
+import { UsageStats, CuratedApp, InstalledApp } from '../../modules/UsageStats';
 import { MonitorService } from '../../modules/MonitorService';
-import {
-  INTENSITY_PRESETS,
-  DEFAULT_INTENSITY,
-  IntensityLevel,
-} from '../../config/intensityPresets';
 import { colors, spacing, font } from '../../theme';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'MonitoredApps'>;
 
-const INTENSITY_LEVELS: IntensityLevel[] = ['gentle', 'balanced', 'strict'];
-const INTENSITY_ACCENT: Record<IntensityLevel, string> = {
-  gentle: '#22c55e',
-  balanced: '#6366f1',
-  strict: '#ef4444',
-};
+type AppItem = { packageName: string; appName: string; installed: boolean };
+type Section = { title: string; data: AppItem[] };
 
 export default function MonitoredAppsScreen({ navigation }: Props) {
-  const [apps, setApps] = useState<CuratedApp[]>([]);
+  const [curatedApps, setCuratedApps] = useState<CuratedApp[]>([]);
+  const [userApps, setUserApps] = useState<InstalledApp[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [intensity, setIntensity] = useState<IntensityLevel>(DEFAULT_INTENSITY);
+  const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     async function load() {
-      const [curatedApps, monitored, savedIntensity] = await Promise.all([
+      const [curated, user, monitored] = await Promise.all([
         UsageStats.getCuratedAppsWithStatus().catch(() => [] as CuratedApp[]),
+        UsageStats.getInstalledUserApps().catch(() => [] as InstalledApp[]),
         MonitorService.getMonitoredApps(),
-        MonitorService.getIntensity(),
       ]);
-      setApps(curatedApps);
+      const installed = curated.filter((a) => a.installed).sort((a, b) => a.appName.localeCompare(b.appName));
+      const notInstalled = curated.filter((a) => !a.installed).sort((a, b) => a.appName.localeCompare(b.appName));
+      setCuratedApps([...installed, ...notInstalled]);
+      setUserApps(user);
       setSelected(new Set(monitored));
-      setIntensity(savedIntensity);
       setLoading(false);
     }
     load();
   }, []);
+
+  const sections: Section[] = useMemo(() => {
+    const q = search.toLowerCase();
+    const filteredCurated: AppItem[] = curatedApps
+      .filter((a) => !q || a.appName.toLowerCase().includes(q))
+      .map((a) => ({ packageName: a.packageName, appName: a.appName, installed: a.installed }));
+    const filteredUser: AppItem[] = userApps
+      .filter((a) => !q || a.appName.toLowerCase().includes(q))
+      .map((a) => ({ packageName: a.packageName, appName: a.appName, installed: true }));
+    return [
+      { title: 'Popular apps', data: filteredCurated },
+      { title: 'Other apps on your device', data: filteredUser },
+    ].filter((s) => s.data.length > 0);
+  }, [curatedApps, userApps, search]);
 
   const toggle = (pkg: string, installed: boolean) => {
     if (!installed) {
@@ -62,13 +71,8 @@ export default function MonitoredAppsScreen({ navigation }: Props) {
     }
     setSelected((prev) => {
       const next = new Set(prev);
-      if (next.has(pkg)) {
-        next.delete(pkg);
-      } else if (next.size < 5) {
-        next.add(pkg);
-      } else {
-        Alert.alert('Maximum 5 apps', 'Pick up to 5 apps to keep it manageable.');
-      }
+      if (next.has(pkg)) next.delete(pkg);
+      else next.add(pkg);
       return next;
     });
   };
@@ -76,16 +80,49 @@ export default function MonitoredAppsScreen({ navigation }: Props) {
   const handleSave = async () => {
     setSaving(true);
     try {
-      await Promise.all([
-        MonitorService.updateMonitoredApps(Array.from(selected)),
-        MonitorService.setIntensity(intensity),
-      ]);
+      await MonitorService.updateMonitoredApps(Array.from(selected));
       navigation.goBack();
     } catch {
       Alert.alert('Error', 'Could not save changes. Please try again.');
     } finally {
       setSaving(false);
     }
+  };
+
+  const renderItem = ({ item }: { item: AppItem }) => {
+    const isSelected = selected.has(item.packageName);
+    return (
+      <TouchableOpacity
+        style={[
+          styles.appRow,
+          isSelected && styles.appRowSelected,
+          !item.installed && styles.appRowDimmed,
+        ]}
+        onPress={() => toggle(item.packageName, item.installed)}
+        activeOpacity={item.installed ? 0.75 : 0.4}
+      >
+        <View style={styles.appInfo}>
+          <View style={styles.nameLine}>
+            <Text style={[styles.appName, !item.installed && styles.appNameDimmed]}>
+              {item.appName}
+            </Text>
+            {!item.installed && (
+              <View style={styles.notInstalledBadge}>
+                <Text style={styles.notInstalledText}>not installed</Text>
+              </View>
+            )}
+          </View>
+          <Text style={styles.appPkg}>{item.packageName}</Text>
+        </View>
+        <View style={[
+          styles.checkbox,
+          isSelected && styles.checkboxSelected,
+          !item.installed && styles.checkboxDimmed,
+        ]}>
+          {isSelected && <Text style={styles.checkMark}>✓</Text>}
+        </View>
+      </TouchableOpacity>
+    );
   };
 
   return (
@@ -98,38 +135,23 @@ export default function MonitoredAppsScreen({ navigation }: Props) {
         </TouchableOpacity>
         <Text style={styles.title}>Monitored Apps</Text>
         <Text style={styles.subtitle}>
-          Pick up to 5 apps. ScrollGuard tracks and nudges you on these.
+          ScrollGuard tracks and nudges you on these apps.
           Greyed out apps aren't installed on this device yet.
         </Text>
       </View>
 
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Improvement pace</Text>
-        <View style={styles.intensityRow}>
-          {INTENSITY_LEVELS.map((level) => {
-            const accent = INTENSITY_ACCENT[level];
-            const isActive = intensity === level;
-            return (
-              <TouchableOpacity
-                key={level}
-                style={[styles.intensityBtn, isActive && { borderColor: accent, backgroundColor: accent + '22' }]}
-                onPress={() => setIntensity(level)}
-                activeOpacity={0.75}
-              >
-                <Text style={[styles.intensityBtnText, isActive && { color: accent }]}>
-                  {INTENSITY_PRESETS[level].label}
-                </Text>
-                <Text style={styles.intensityTagline}>
-                  {INTENSITY_PRESETS[level].tagline}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
+      <View style={styles.searchContainer}>
+        <TextInput
+          style={styles.searchInput}
+          placeholder="Search apps…"
+          placeholderTextColor={colors.textSecondary}
+          value={search}
+          onChangeText={setSearch}
+          autoCorrect={false}
+          autoCapitalize="none"
+          clearButtonMode="while-editing"
+        />
       </View>
-
-      <View style={styles.divider} />
-      <Text style={styles.sectionTitle2}>Apps</Text>
 
       {loading ? (
         <View style={styles.loader}>
@@ -137,50 +159,27 @@ export default function MonitoredAppsScreen({ navigation }: Props) {
           <Text style={styles.loaderText}>Loading…</Text>
         </View>
       ) : (
-        <FlatList
-          data={apps}
-          keyExtractor={(item) => item.packageName}
-          contentContainerStyle={styles.list}
-          renderItem={({ item }) => {
-            const isSelected = selected.has(item.packageName);
-            return (
-              <TouchableOpacity
-                style={[
-                  styles.appRow,
-                  isSelected && styles.appRowSelected,
-                  !item.installed && styles.appRowDimmed,
-                ]}
-                onPress={() => toggle(item.packageName, item.installed)}
-                activeOpacity={item.installed ? 0.75 : 0.4}
-              >
-                <View style={styles.appInfo}>
-                  <View style={styles.nameLine}>
-                    <Text style={[styles.appName, !item.installed && styles.appNameDimmed]}>
-                      {item.appName}
-                    </Text>
-                    {!item.installed && (
-                      <View style={styles.notInstalledBadge}>
-                        <Text style={styles.notInstalledText}>not installed</Text>
-                      </View>
-                    )}
-                  </View>
-                  <Text style={styles.appPkg}>{item.packageName}</Text>
-                </View>
-                <View style={[
-                  styles.checkbox,
-                  isSelected && styles.checkboxSelected,
-                  !item.installed && styles.checkboxDimmed,
-                ]}>
-                  {isSelected && <Text style={styles.checkMark}>✓</Text>}
-                </View>
-              </TouchableOpacity>
-            );
-          }}
-        />
+        <View style={styles.listContainer}>
+          <SectionList
+            sections={sections}
+            keyExtractor={(item) => item.packageName}
+            contentContainerStyle={styles.list}
+            showsVerticalScrollIndicator={true}
+            persistentScrollbar={true}
+            stickySectionHeadersEnabled={false}
+            renderSectionHeader={({ section }) => (
+              <Text style={styles.sectionHeader}>{section.title}</Text>
+            )}
+            renderItem={renderItem}
+            ListEmptyComponent={
+              <Text style={styles.emptyMsg}>No apps match "{search}"</Text>
+            }
+          />
+        </View>
       )}
 
       <View style={styles.footer}>
-        <Text style={styles.selectionCount}>{selected.size} of 5 selected</Text>
+        <Text style={styles.selectionCount}>{selected.size} selected</Text>
         {selected.size === 0 && (
           <View style={styles.nudgeBanner}>
             <Text style={styles.nudgeText}>
@@ -210,37 +209,63 @@ const styles = StyleSheet.create({
   header: {
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.lg,
-    paddingBottom: spacing.md,
+    paddingBottom: spacing.sm,
   },
   backBtn: { marginBottom: spacing.md },
   backText: { color: colors.accent, fontSize: font.md, fontWeight: '600' },
   title: { fontSize: font.xl, fontWeight: '700', color: colors.textPrimary, marginBottom: spacing.sm },
   subtitle: { fontSize: font.sm, color: colors.textSecondary, lineHeight: 20 },
-  section: { paddingHorizontal: spacing.lg, paddingTop: spacing.md },
-  sectionTitle: {
-    fontSize: font.sm, fontWeight: '700', color: colors.textSecondary,
-    marginBottom: spacing.sm, textTransform: 'uppercase', letterSpacing: 0.8,
-  },
-  sectionTitle2: {
-    fontSize: font.sm, fontWeight: '700', color: colors.textSecondary,
-    marginBottom: spacing.sm, textTransform: 'uppercase', letterSpacing: 0.8,
+
+  searchContainer: {
     paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
   },
-  intensityRow: { flexDirection: 'row', gap: spacing.sm },
-  intensityBtn: {
-    flex: 1, borderWidth: 1.5, borderColor: colors.border,
-    borderRadius: 10, padding: spacing.sm, alignItems: 'center',
+  searchInput: {
+    backgroundColor: colors.surface,
+    borderRadius: 10,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 10,
+    fontSize: font.md,
+    color: colors.textPrimary,
+    borderWidth: 1,
+    borderColor: colors.border,
   },
-  intensityBtnText: { fontSize: font.sm, fontWeight: '700', color: colors.textSecondary },
-  intensityTagline: { fontSize: 10, color: colors.textSecondary, marginTop: 2, textAlign: 'center' },
-  divider: { height: 1, backgroundColor: colors.border, marginVertical: spacing.md, marginHorizontal: spacing.lg },
+
   loader: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: spacing.md },
   loaderText: { color: colors.textSecondary, fontSize: font.md },
-  list: { paddingHorizontal: spacing.lg, paddingTop: spacing.sm },
+
+  listContainer: {
+    flex: 1,
+    marginHorizontal: spacing.lg,
+    marginBottom: spacing.sm,
+    backgroundColor: colors.bg,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+    overflow: 'hidden',
+  },
+  list: { paddingHorizontal: spacing.sm, paddingTop: spacing.sm, paddingBottom: spacing.sm },
+
+  sectionHeader: {
+    fontSize: font.xs,
+    fontWeight: '700',
+    color: colors.textSecondary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+    paddingHorizontal: spacing.sm,
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.xs,
+  },
+
   appRow: {
-    flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surface,
-    borderRadius: 12, padding: spacing.md, marginBottom: spacing.sm,
-    borderWidth: 1.5, borderColor: 'transparent',
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.surface,
+    borderRadius: 10,
+    padding: spacing.md,
+    marginBottom: spacing.sm,
+    borderWidth: 1.5,
+    borderColor: 'transparent',
   },
   appRowSelected: { borderColor: colors.accent },
   appRowDimmed: { opacity: 0.45 },
@@ -258,6 +283,8 @@ const styles = StyleSheet.create({
   checkboxSelected: { backgroundColor: colors.accent, borderColor: colors.accent },
   checkboxDimmed: { borderColor: colors.border },
   checkMark: { color: '#fff', fontSize: 14, fontWeight: '700' },
+  emptyMsg: { color: colors.textSecondary, fontSize: font.sm, padding: spacing.md, textAlign: 'center' },
+
   footer: { paddingHorizontal: spacing.lg, paddingBottom: spacing.xl, gap: spacing.sm },
   selectionCount: { color: colors.textSecondary, fontSize: font.sm, textAlign: 'center' },
   nudgeBanner: {

@@ -182,6 +182,44 @@ export async function recordStreakDay(): Promise<StreakData> {
   };
 }
 
+export async function removeActivityCompletion(activityId: string): Promise<void> {
+  const db = await getDb();
+  const today = todayString();
+  await db.runAsync(
+    'DELETE FROM activity_completions WHERE date = ? AND activity_id = ?',
+    today,
+    activityId
+  );
+}
+
+// ─── Weekly chart data ────────────────────────────────────────────────────────
+
+export async function getWeeklyUsageTotals(
+  weekOffset = 0
+): Promise<{ date: string; totalMs: number }[]> {
+  const db = await getDb();
+  const today = new Date();
+  const daysSinceMonday = (today.getDay() + 6) % 7;
+  const monday = new Date(today);
+  monday.setDate(today.getDate() - daysSinceMonday + weekOffset * 7);
+  monday.setHours(0, 0, 0, 0);
+
+  const dates: string[] = [];
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(monday);
+    d.setDate(monday.getDate() + i);
+    dates.push(d.toISOString().slice(0, 10));
+  }
+
+  const placeholders = dates.map(() => '?').join(', ');
+  const rows = await db.getAllAsync<{ date: string; total: number }>(
+    `SELECT date, SUM(total_time_ms) as total FROM usage_snapshots WHERE date IN (${placeholders}) GROUP BY date`,
+    ...dates
+  );
+  const map = new Map(rows.map((r) => [r.date, r.total]));
+  return dates.map((date) => ({ date, totalMs: map.get(date) ?? 0 }));
+}
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 export function todayString(): string {

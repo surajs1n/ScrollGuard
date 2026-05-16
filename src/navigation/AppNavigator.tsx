@@ -8,6 +8,7 @@ import AppSelectionScreen from '../screens/onboarding/AppSelectionScreen';
 import DashboardScreen from '../screens/dashboard/DashboardScreen';
 import SettingsScreen from '../screens/settings/SettingsScreen';
 import MonitoredAppsScreen from '../screens/settings/MonitoredAppsScreen';
+import IntensitySettingsScreen from '../screens/settings/IntensitySettingsScreen';
 import IntensitySelectionScreen from '../screens/onboarding/IntensitySelectionScreen';
 
 export type RootStackParamList = {
@@ -19,6 +20,7 @@ export type RootStackParamList = {
   Dashboard: { openSuggestion?: boolean };
   Settings: undefined;
   MonitoredApps: undefined;
+  IntensitySettings: undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -41,6 +43,7 @@ export default function AppNavigator({ initialRoute }: Props) {
       <Stack.Screen name="Dashboard" component={DashboardScreen} />
       <Stack.Screen name="Settings" component={SettingsScreen} />
       <Stack.Screen name="MonitoredApps" component={MonitoredAppsScreen} />
+      <Stack.Screen name="IntensitySettings" component={IntensitySettingsScreen} />
     </Stack.Navigator>
   );
 }

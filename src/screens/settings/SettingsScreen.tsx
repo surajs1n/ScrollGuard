@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -12,6 +12,8 @@ import {
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../navigation/AppNavigator';
 import { exportData } from '../../modules/ExportService';
+import { MonitorService } from '../../modules/MonitorService';
+import { INTENSITY_PRESETS, IntensityLevel } from '../../config/intensityPresets';
 import { colors, spacing, font } from '../../theme';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Settings'>;
@@ -27,6 +29,19 @@ interface SettingsRow {
 
 export default function SettingsScreen({ navigation }: Props) {
   const [exporting, setExporting] = useState(false);
+  const [intensity, setIntensity] = useState<IntensityLevel | null>(null);
+
+  useEffect(() => {
+    MonitorService.getIntensity().then(setIntensity);
+  }, []);
+
+  // Refresh intensity label when returning from IntensitySettingsScreen
+  useEffect(() => {
+    const unsubscribe = navigation.addListener('focus', () => {
+      MonitorService.getIntensity().then(setIntensity);
+    });
+    return unsubscribe;
+  }, [navigation]);
 
   const handleExport = async () => {
     setExporting(true);
@@ -39,13 +54,24 @@ export default function SettingsScreen({ navigation }: Props) {
     }
   };
 
+  const intensityPreset = intensity ? INTENSITY_PRESETS[intensity] : null;
+
   const rows: SettingsRow[] = [
     {
       key: 'monitored_apps',
       icon: '📱',
       label: 'Monitored Apps',
-      sublabel: 'Choose apps to track and set your improvement pace',
+      sublabel: 'Choose which apps ScrollGuard tracks',
       onPress: () => navigation.navigate('MonitoredApps'),
+    },
+    {
+      key: 'intensity',
+      icon: '🎯',
+      label: 'Improvement Pace',
+      sublabel: intensityPreset
+        ? `${intensityPreset.label} — ${intensityPreset.tagline}`
+        : 'Loading…',
+      onPress: () => navigation.navigate('IntensitySettings'),
     },
     {
       key: 'export',

@@ -5,6 +5,7 @@ import android.app.usage.UsageStats
 import android.app.usage.UsageStatsManager
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Process
@@ -214,6 +215,44 @@ class UsageStatsModule(reactContext: ReactApplicationContext) :
             }
         }
         promise.resolve(result)
+    }
+
+    /**
+     * Returns all user-installed apps on the device, excluding system apps,
+     * our own app, and anything already in the curated list.
+     * Sorted alphabetically by display name.
+     */
+    @ReactMethod
+    fun getInstalledUserApps(promise: Promise) {
+        try {
+            val pm = reactApplicationContext.packageManager
+            val curatedPackages = CURATED_APPS.map { it.first }.toSet()
+            val ourPackage = reactApplicationContext.packageName
+
+            val apps = pm.getInstalledApplications(0)
+                .filter { info ->
+                    val isSystemApp = (info.flags and ApplicationInfo.FLAG_SYSTEM) != 0
+                    val hasLauncher = pm.getLaunchIntentForPackage(info.packageName) != null
+                    !isSystemApp &&
+                    hasLauncher &&
+                    info.packageName != ourPackage &&
+                    info.packageName !in curatedPackages
+                }
+                .map { info -> Pair(info.packageName, pm.getApplicationLabel(info).toString()) }
+                .sortedBy { it.second.lowercase() }
+
+            val result = WritableNativeArray()
+            apps.forEach { (pkg, name) ->
+                val map = WritableNativeMap().apply {
+                    putString("packageName", pkg)
+                    putString("appName", name)
+                }
+                result.pushMap(map)
+            }
+            promise.resolve(result)
+        } catch (e: Exception) {
+            promise.reject("GET_INSTALLED_APPS_FAILED", e.message)
+        }
     }
 
     /**

@@ -1,52 +1,73 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
   SafeAreaView,
-  FlatList,
+  SectionList,
+  TextInput,
   ActivityIndicator,
   Alert,
 } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../navigation/AppNavigator';
-import { UsageStats, CuratedApp } from '../../modules/UsageStats';
+import { UsageStats, CuratedApp, InstalledApp } from '../../modules/UsageStats';
 import { MonitorService } from '../../modules/MonitorService';
 import { colors, spacing, font } from '../../theme';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'AppSelection'>;
 
+type AppItem = { packageName: string; appName: string; installed: boolean };
+type Section = { title: string; data: AppItem[] };
+
 export default function AppSelectionScreen({ navigation }: Props) {
-  const [apps, setApps] = useState<CuratedApp[]>([]);
+  const [curatedApps, setCuratedApps] = useState<CuratedApp[]>([]);
+  const [userApps, setUserApps] = useState<InstalledApp[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    UsageStats.getCuratedAppsWithStatus()
-      .then(setApps)
-      .catch(() => setApps([]))
-      .finally(() => setLoading(false));
+    Promise.all([
+      UsageStats.getCuratedAppsWithStatus().catch(() => [] as CuratedApp[]),
+      UsageStats.getInstalledUserApps().catch(() => [] as InstalledApp[]),
+    ]).then(([curated, user]) => {
+      const installed = curated.filter((a) => a.installed).sort((a, b) => a.appName.localeCompare(b.appName));
+      const notInstalled = curated.filter((a) => !a.installed).sort((a, b) => a.appName.localeCompare(b.appName));
+      setCuratedApps([...installed, ...notInstalled]);
+      setUserApps(user);
+      setLoading(false);
+    });
   }, []);
+
+  const sections: Section[] = useMemo(() => {
+    const q = search.toLowerCase();
+    const filteredCurated: AppItem[] = curatedApps
+      .filter((a) => !q || a.appName.toLowerCase().includes(q))
+      .map((a) => ({ packageName: a.packageName, appName: a.appName, installed: a.installed }));
+    const filteredUser: AppItem[] = userApps
+      .filter((a) => !q || a.appName.toLowerCase().includes(q))
+      .map((a) => ({ packageName: a.packageName, appName: a.appName, installed: true }));
+    return [
+      { title: 'Popular apps', data: filteredCurated },
+      { title: 'Other apps on your device', data: filteredUser },
+    ].filter((s) => s.data.length > 0);
+  }, [curatedApps, userApps, search]);
 
   const toggle = (pkg: string, installed: boolean) => {
     if (!installed) {
       Alert.alert(
         'App not installed',
-        "This app isn't on your device yet. Install it first, then come back to enable tracking.",
+        "This app isn't on your device yet. Install it first, then come back.",
       );
       return;
     }
     setSelected((prev) => {
       const next = new Set(prev);
-      if (next.has(pkg)) {
-        next.delete(pkg);
-      } else if (next.size < 5) {
-        next.add(pkg);
-      } else {
-        Alert.alert('Maximum 5 apps', 'Pick up to 5 apps to keep it manageable.');
-      }
+      if (next.has(pkg)) next.delete(pkg);
+      else next.add(pkg);
       return next;
     });
   };
@@ -56,11 +77,42 @@ export default function AppSelectionScreen({ navigation }: Props) {
     try {
       await MonitorService.init(Array.from(selected));
       navigation.navigate('IntensitySelection');
-    } catch (e) {
+    } catch {
       Alert.alert('Error', 'Something went wrong. Please try again.');
     } finally {
       setSaving(false);
     }
+  };
+
+  const renderItem = ({ item }: { item: AppItem }) => {
+    const isSelected = selected.has(item.packageName);
+    return (
+      <TouchableOpacity
+        style={[
+          styles.appRow,
+          isSelected && styles.appRowSelected,
+          !item.installed && styles.appRowDimmed,
+        ]}
+        onPress={() => toggle(item.packageName, item.installed)}
+        activeOpacity={item.installed ? 0.75 : 0.4}
+      >
+        <View style={styles.appInfo}>
+          <View style={styles.nameLine}>
+            <Text style={[styles.appName, !item.installed && styles.appNameDimmed]}>
+              {item.appName}
+            </Text>
+            {!item.installed && (
+              <View style={styles.notInstalledBadge}>
+                <Text style={styles.notInstalledText}>not installed</Text>
+              </View>
+            )}
+          </View>
+        </View>
+        <View style={[styles.checkbox, isSelected && styles.checkboxSelected]}>
+          {isSelected && <Text style={styles.checkMark}>✓</Text>}
+        </View>
+      </TouchableOpacity>
+    );
   };
 
   return (
@@ -72,8 +124,21 @@ export default function AppSelectionScreen({ navigation }: Props) {
         <Text style={styles.step}>Step 3 of 3</Text>
         <Text style={styles.title}>Which apps do you want to watch?</Text>
         <Text style={styles.subtitle}>
-          Pick up to 5. Greyed out apps aren't installed on this device yet.
+          Greyed out apps aren't installed on this device yet.
         </Text>
+      </View>
+
+      <View style={styles.searchContainer}>
+        <TextInput
+          style={styles.searchInput}
+          placeholder="Search apps…"
+          placeholderTextColor={colors.textSecondary}
+          value={search}
+          onChangeText={setSearch}
+          autoCorrect={false}
+          autoCapitalize="none"
+          clearButtonMode="while-editing"
+        />
       </View>
 
       {loading ? (
@@ -82,45 +147,27 @@ export default function AppSelectionScreen({ navigation }: Props) {
           <Text style={styles.loaderText}>Loading…</Text>
         </View>
       ) : (
-        <FlatList
-          data={apps}
-          keyExtractor={(item) => item.packageName}
-          contentContainerStyle={styles.list}
-          renderItem={({ item }) => {
-            const isSelected = selected.has(item.packageName);
-            return (
-              <TouchableOpacity
-                style={[
-                  styles.appRow,
-                  isSelected && styles.appRowSelected,
-                  !item.installed && styles.appRowDimmed,
-                ]}
-                onPress={() => toggle(item.packageName, item.installed)}
-                activeOpacity={item.installed ? 0.75 : 0.4}
-              >
-                <View style={styles.appInfo}>
-                  <View style={styles.nameLine}>
-                    <Text style={[styles.appName, !item.installed && styles.appNameDimmed]}>
-                      {item.appName}
-                    </Text>
-                    {!item.installed && (
-                      <View style={styles.notInstalledBadge}>
-                        <Text style={styles.notInstalledText}>not installed</Text>
-                      </View>
-                    )}
-                  </View>
-                </View>
-                <View style={[styles.checkbox, isSelected && styles.checkboxSelected]}>
-                  {isSelected && <Text style={styles.checkMark}>✓</Text>}
-                </View>
-              </TouchableOpacity>
-            );
-          }}
-        />
+        <View style={styles.listContainer}>
+          <SectionList
+            sections={sections}
+            keyExtractor={(item) => item.packageName}
+            contentContainerStyle={styles.list}
+            showsVerticalScrollIndicator={true}
+            persistentScrollbar={true}
+            stickySectionHeadersEnabled={false}
+            renderSectionHeader={({ section }) => (
+              <Text style={styles.sectionHeader}>{section.title}</Text>
+            )}
+            renderItem={renderItem}
+            ListEmptyComponent={
+              <Text style={styles.emptyMsg}>No apps match "{search}"</Text>
+            }
+          />
+        </View>
       )}
 
       <View style={styles.footer}>
-        <Text style={styles.selectionCount}>{selected.size} of 5 selected</Text>
+        <Text style={styles.selectionCount}>{selected.size} selected</Text>
         {selected.size === 0 && (
           <View style={styles.nudgeBanner}>
             <Text style={styles.nudgeText}>
@@ -148,32 +195,65 @@ export default function AppSelectionScreen({ navigation }: Props) {
   );
 }
 
-
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
   header: {
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.lg,
-    paddingBottom: spacing.md,
+    paddingBottom: spacing.sm,
   },
   backBtn: { marginBottom: spacing.md },
   backText: { color: colors.accent, fontSize: font.md, fontWeight: '600' },
   step: { color: colors.accent, fontSize: font.sm, fontWeight: '600', marginBottom: spacing.sm },
-  title: {
-    fontSize: font.xl,
-    fontWeight: '700',
-    color: colors.textPrimary,
-    marginBottom: spacing.sm,
+  title: { fontSize: font.xl, fontWeight: '700', color: colors.textPrimary, marginBottom: spacing.sm },
+  subtitle: { fontSize: font.sm, color: colors.textSecondary, lineHeight: 20 },
+
+  searchContainer: {
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
   },
-  subtitle: { fontSize: font.md, color: colors.textSecondary, lineHeight: 22 },
+  searchInput: {
+    backgroundColor: colors.surface,
+    borderRadius: 10,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 10,
+    fontSize: font.md,
+    color: colors.textPrimary,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+
   loader: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: spacing.md },
   loaderText: { color: colors.textSecondary, fontSize: font.md },
-  list: { paddingHorizontal: spacing.lg, paddingTop: spacing.md },
+
+  listContainer: {
+    flex: 1,
+    marginHorizontal: spacing.lg,
+    marginBottom: spacing.sm,
+    backgroundColor: colors.bg,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+    overflow: 'hidden',
+  },
+  list: { paddingHorizontal: spacing.sm, paddingTop: spacing.sm, paddingBottom: spacing.sm },
+
+  sectionHeader: {
+    fontSize: font.xs,
+    fontWeight: '700',
+    color: colors.textSecondary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+    paddingHorizontal: spacing.sm,
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.xs,
+  },
+
   appRow: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: colors.surface,
-    borderRadius: 12,
+    borderRadius: 10,
     padding: spacing.md,
     marginBottom: spacing.sm,
     borderWidth: 1.5,
@@ -203,6 +283,8 @@ const styles = StyleSheet.create({
   },
   checkboxSelected: { backgroundColor: colors.accent, borderColor: colors.accent },
   checkMark: { color: '#fff', fontSize: 14, fontWeight: '700' },
+  emptyMsg: { color: colors.textSecondary, fontSize: font.sm, padding: spacing.md, textAlign: 'center' },
+
   footer: { paddingHorizontal: spacing.lg, paddingBottom: spacing.xl, gap: spacing.sm },
   selectionCount: { color: colors.textSecondary, fontSize: font.sm, textAlign: 'center' },
   primaryBtn: {
