@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -14,7 +14,7 @@ import { RootStackParamList } from '../../navigation/AppNavigator';
 import { exportData } from '../../modules/ExportService';
 import { MonitorService } from '../../modules/MonitorService';
 import { INTENSITY_PRESETS, IntensityLevel } from '../../config/intensityPresets';
-import { colors, spacing, font } from '../../theme';
+import { useTheme, spacing, font, AppColors } from '../../ThemeContext';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Settings'>;
 
@@ -27,7 +27,36 @@ interface SettingsRow {
   loading?: boolean;
 }
 
+function makeStyles(c: AppColors) {
+  return StyleSheet.create({
+    container: { flex: 1, backgroundColor: c.bg },
+    header: { paddingHorizontal: spacing.lg, paddingTop: spacing.lg, paddingBottom: spacing.lg },
+    backBtn: { marginBottom: spacing.md },
+    backText: { color: c.accent, fontSize: font.md, fontWeight: '600' },
+    title: { fontSize: font.xxl, fontWeight: '700', color: c.textPrimary },
+    list: {
+      marginHorizontal: spacing.lg,
+      backgroundColor: c.surface,
+      borderRadius: 16,
+      overflow: 'hidden',
+    },
+    row: { flexDirection: 'row', alignItems: 'center', padding: spacing.md, gap: spacing.md },
+    rowBorder: { borderBottomWidth: 1, borderBottomColor: c.border },
+    rowIcon: {
+      width: 40, height: 40, borderRadius: 10,
+      backgroundColor: c.bg, justifyContent: 'center', alignItems: 'center',
+    },
+    rowIconText: { fontSize: 20 },
+    rowBody: { flex: 1 },
+    rowLabel: { fontSize: font.md, fontWeight: '600', color: c.textPrimary },
+    rowSublabel: { fontSize: font.xs, color: c.textSecondary, marginTop: 2, lineHeight: 16 },
+    chevron: { fontSize: 22, color: c.textSecondary, fontWeight: '300' },
+  });
+}
+
 export default function SettingsScreen({ navigation }: Props) {
+  const { colors, refreshTheme } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const [exporting, setExporting] = useState(false);
   const [intensity, setIntensity] = useState<IntensityLevel | null>(null);
 
@@ -35,13 +64,13 @@ export default function SettingsScreen({ navigation }: Props) {
     MonitorService.getIntensity().then(setIntensity);
   }, []);
 
-  // Refresh intensity label when returning from IntensitySettingsScreen
   useEffect(() => {
     const unsubscribe = navigation.addListener('focus', () => {
       MonitorService.getIntensity().then(setIntensity);
+      refreshTheme();
     });
     return unsubscribe;
-  }, [navigation]);
+  }, [navigation, refreshTheme]);
 
   const handleExport = async () => {
     setExporting(true);
@@ -68,9 +97,7 @@ export default function SettingsScreen({ navigation }: Props) {
       key: 'intensity',
       icon: '🎯',
       label: 'Improvement Pace',
-      sublabel: intensityPreset
-        ? `${intensityPreset.label} — ${intensityPreset.tagline}`
-        : 'Loading…',
+      sublabel: intensityPreset ? `${intensityPreset.label} — ${intensityPreset.tagline}` : 'Loading…',
       onPress: () => navigation.navigate('IntensitySettings'),
     },
     {
@@ -121,44 +148,3 @@ export default function SettingsScreen({ navigation }: Props) {
     </SafeAreaView>
   );
 }
-
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.bg },
-  header: {
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.lg,
-    paddingBottom: spacing.lg,
-  },
-  backBtn: { marginBottom: spacing.md },
-  backText: { color: colors.accent, fontSize: font.md, fontWeight: '600' },
-  title: { fontSize: font.xxl, fontWeight: '700', color: colors.textPrimary },
-  list: {
-    marginHorizontal: spacing.lg,
-    backgroundColor: colors.surface,
-    borderRadius: 16,
-    overflow: 'hidden',
-  },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: spacing.md,
-    gap: spacing.md,
-  },
-  rowBorder: {
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-  },
-  rowIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 10,
-    backgroundColor: colors.bg,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  rowIconText: { fontSize: 20 },
-  rowBody: { flex: 1 },
-  rowLabel: { fontSize: font.md, fontWeight: '600', color: colors.textPrimary },
-  rowSublabel: { fontSize: font.xs, color: colors.textSecondary, marginTop: 2, lineHeight: 16 },
-  chevron: { fontSize: 22, color: colors.textSecondary, fontWeight: '300' },
-});

@@ -19,6 +19,39 @@
 export type FrictionType = 'reminder' | 'soft' | 'hard';
 export type IntensityLevel = 'gentle' | 'balanced' | 'strict';
 
+// ─── Per-intensity colour palettes ───────────────────────────────────────────
+export interface IntensityColors {
+  bg: string;
+  surface: string;
+  border: string;
+  accent: string;
+  accentLight: string;
+}
+
+export const INTENSITY_COLORS: Record<IntensityLevel, IntensityColors> = {
+  gentle: {
+    bg:          '#081a0e',  // deep forest green
+    surface:     '#0f2318',
+    border:      '#1a3d26',
+    accent:      '#22c55e',  // green-500
+    accentLight: '#4ade80',  // green-400
+  },
+  balanced: {
+    bg:          '#0f172a',  // slate-900 (default)
+    surface:     '#1e293b',
+    border:      '#334155',
+    accent:      '#6366f1',  // indigo-500
+    accentLight: '#818cf8',  // indigo-400
+  },
+  strict: {
+    bg:          '#1a0808',  // deep crimson dark
+    surface:     '#2d1212',
+    border:      '#4a1f1f',
+    accent:      '#ef4444',  // red-500
+    accentLight: '#f87171',  // red-400
+  },
+};
+
 export interface IntensityPreset {
   label: string;
   tagline: string;

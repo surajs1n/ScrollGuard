@@ -235,8 +235,11 @@ class UsageStatsModule(reactContext: ReactApplicationContext) :
             val apps = pm.getInstalledApplications(0)
                 .filter { info ->
                     val isSystemApp = (info.flags and ApplicationInfo.FLAG_SYSTEM) != 0
+                    // FLAG_UPDATED_SYSTEM_APP: pre-installed but updated from Play Store
+                    // (e.g. Hotstar, ShareChat, YouTube Music on OEM devices)
+                    val isUpdatedSystemApp = (info.flags and ApplicationInfo.FLAG_UPDATED_SYSTEM_APP) != 0
                     val hasLauncher = pm.getLaunchIntentForPackage(info.packageName) != null
-                    !isSystemApp &&
+                    (!isSystemApp || isUpdatedSystemApp) &&
                     hasLauncher &&
                     info.packageName != ourPackage &&
                     info.packageName !in curatedPackages
