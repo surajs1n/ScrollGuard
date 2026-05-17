@@ -220,6 +220,54 @@ export async function getWeeklyUsageTotals(
   return dates.map((date) => ({ date, totalMs: map.get(date) ?? 0 }));
 }
 
+// ─── Developer / Testing utilities ───────────────────────────────────────────
+
+/**
+ * Inserts synthetic usage data for the past `preset.sampleDays` days (excluding today).
+ * Each day gets a random total between 60–130% of baselineCapMinutes, split
+ * randomly across the provided apps so the chart and reduction logic have
+ * realistic data to work against. Uses upsertUsageSnapshot so re-seeding is safe.
+ */
+export async function seedTestData(
+  apps: { packageName: string; appName: string }[],
+  preset: { sampleDays: number; baselineCapMinutes: number }
+): Promise<void> {
+  if (apps.length === 0) return;
+  const baselineMs = preset.baselineCapMinutes * 60_000;
+
+  for (let dayOffset = 1; dayOffset <= preset.sampleDays; dayOffset++) {
+    const d = new Date();
+    d.setDate(d.getDate() - dayOffset);
+    const date = localDateString(d);
+
+    // Random daily total: 60% – 130% of the baseline cap
+    const variation = 0.6 + Math.random() * 0.7;
+    const dayTotalMs = Math.round(baselineMs * variation);
+
+    // Random weights so some apps dominate on some days
+    const weights = apps.map(() => Math.random());
+    const weightSum = weights.reduce((a, b) => a + b, 0);
+
+    for (let i = 0; i < apps.length; i++) {
+      const appMs = Math.round(dayTotalMs * (weights[i] / weightSum));
+      if (appMs > 0) {
+        await upsertUsageSnapshot({
+          date,
+          packageName: apps[i].packageName,
+          appName: apps[i].appName,
+          totalTimeMs: appMs,
+        });
+      }
+    }
+  }
+}
+
+/** Wipes all rows from usage_snapshots. Used by the dev "Clear test data" action. */
+export async function clearAllUsageData(): Promise<void> {
+  const db = await getDb();
+  await db.runAsync('DELETE FROM usage_snapshots');
+}
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function localDateString(d: Date): string {
