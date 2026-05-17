@@ -23,20 +23,13 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
-    <!-- Android 11+ package visibility: declare every package we query via PackageManager -->
+    <!-- Android 11+ package visibility: launcher intent query makes all app-drawer
+         apps visible to PackageManager without needing QUERY_ALL_PACKAGES. -->
     <queries>
-        <package android:name="com.instagram.android" />
-        <package android:name="com.google.android.youtube" />
-        <package android:name="com.zhiliaoapp.musically" />
-        <package android:name="com.reddit.frontpage" />
-        <package android:name="com.twitter.android" />
-        <package android:name="com.facebook.katana" />
-        <package android:name="com.snapchat.android" />
-        <package android:name="com.linkedin.android" />
-        <package android:name="com.whatsapp" />
-        <package android:name="com.pinterest" />
-        <package android:name="com.tumblr" />
-        <package android:name="tv.twitch.android.app" />
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
     </queries>
 
     <application

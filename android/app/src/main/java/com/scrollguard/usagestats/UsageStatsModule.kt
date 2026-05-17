@@ -6,11 +6,17 @@ import android.app.usage.UsageStats
 import android.app.usage.UsageStatsManager
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ResolveInfo
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.drawable.Drawable
 import android.os.Build
 import android.os.Process
 import android.provider.Settings
+import android.util.Base64
+import java.io.ByteArrayOutputStream
 import com.facebook.react.bridge.*
 import com.facebook.react.module.annotations.ReactModule
 
@@ -250,9 +256,14 @@ class UsageStatsModule(reactContext: ReactApplicationContext) :
     }
 
     /**
-     * Returns all user-installed apps on the device, excluding system apps,
-     * our own app, and anything already in the curated list.
-     * Sorted alphabetically by display name.
+     * Returns all apps visible in the device's app drawer, excluding our own app
+     * and anything already in the curated list. Sorted alphabetically by display name.
+     *
+     * Uses queryIntentActivities(LAUNCHER) instead of getInstalledApplications() so
+     * that the Android 11+ package visibility system (governed by the <queries> launcher
+     * intent entry in AndroidManifest.xml) correctly surfaces all launchable apps —
+     * including pre-installed ones like Chrome, Gmail, YouTube Music, and Google Photos
+     * that getInstalledApplications() would silently omit without QUERY_ALL_PACKAGES.
      */
     @ReactMethod
     fun getInstalledUserApps(promise: Promise) {
@@ -261,18 +272,13 @@ class UsageStatsModule(reactContext: ReactApplicationContext) :
             val curatedPackages = CURATED_APPS.map { it.first }.toSet()
             val ourPackage = reactApplicationContext.packageName
 
-            val apps = pm.getInstalledApplications(0)
-                .filter { info ->
-                    // Launcher intent is the canonical definition of "visible in the app drawer".
-                    // System services, kernel apps, and invisible packages have no launcher intent
-                    // and are excluded naturally. Pre-installed apps like YouTube Music, Google
-                    // Photos, and OEM apps all have launcher intents and will appear correctly.
-                    val hasLauncher = pm.getLaunchIntentForPackage(info.packageName) != null
-                    hasLauncher &&
-                    info.packageName != ourPackage &&
-                    info.packageName !in curatedPackages
-                }
-                .map { info -> Pair(info.packageName, pm.getApplicationLabel(info).toString()) }
+            val launcherIntent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+            val activities: List<ResolveInfo> = pm.queryIntentActivities(launcherIntent, 0)
+
+            val apps = activities
+                .map { it.activityInfo.packageName to it.loadLabel(pm).toString() }
+                .distinctBy { it.first }
+                .filter { (pkg, _) -> pkg != ourPackage && pkg !in curatedPackages }
                 .sortedBy { it.second.lowercase() }
 
             val result = WritableNativeArray()
@@ -331,6 +337,33 @@ class UsageStatsModule(reactContext: ReactApplicationContext) :
             promise.resolve(true)
         } catch (e: Exception) {
             promise.reject("PREFS_WRITE_FAILED", e.message)
+        }
+    }
+
+    /**
+     * Returns the app icon for a given package as a Base64-encoded PNG string.
+     * Capped at 72×72px — large enough for a list row, small enough to keep
+     * the bridge payload light (~3–8 KB per icon).
+     * Called lazily per visible row so the list opens instantly.
+     */
+    @ReactMethod
+    fun getAppIcon(packageName: String, promise: Promise) {
+        try {
+            val pm = reactApplicationContext.packageManager
+            val drawable: Drawable = pm.getApplicationIcon(packageName)
+
+            val size = 72
+            val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+            val canvas = Canvas(bitmap)
+            drawable.setBounds(0, 0, size, size)
+            drawable.draw(canvas)
+
+            val stream = ByteArrayOutputStream()
+            bitmap.compress(Bitmap.CompressFormat.PNG, 90, stream)
+            val base64 = Base64.encodeToString(stream.toByteArray(), Base64.NO_WRAP)
+            promise.resolve(base64)
+        } catch (e: Exception) {
+            promise.resolve("")  // empty string = show initial placeholder
         }
     }
 }

@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
+  Image,
   StyleSheet,
   TouchableOpacity,
   SafeAreaView,
@@ -80,9 +81,17 @@ function makeStyles(c: AppColors) {
       borderColor: 'transparent',
     },
     appRowSelected: { borderColor: c.accent },
+    appIconWrap: {
+      width: 40, height: 40, borderRadius: 10,
+      backgroundColor: c.border, justifyContent: 'center', alignItems: 'center',
+      marginRight: spacing.sm, overflow: 'hidden',
+    },
+    appIconImg: { width: 40, height: 40, borderRadius: 10 },
+    appIconInitial: { fontSize: 18, fontWeight: '700', color: c.textSecondary },
     appInfo: { flex: 1 },
     nameLine: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, flexWrap: 'wrap' },
     appName: { fontSize: font.md, fontWeight: '600', color: c.textPrimary },
+    appPkg: { fontSize: font.xs, color: c.textSecondary, marginTop: 2 },
     checkbox: {
       width: 24,
       height: 24,
@@ -109,6 +118,52 @@ function makeStyles(c: AppColors) {
     },
     nudgeText: { color: c.warning, fontSize: font.sm, lineHeight: 20 },
   });
+}
+
+type RowStyles = ReturnType<typeof makeStyles>;
+
+function AppRow({
+  item,
+  isSelected,
+  onToggle,
+  styles,
+}: {
+  item: AppItem;
+  isSelected: boolean;
+  onToggle: (pkg: string) => void;
+  styles: RowStyles;
+}) {
+  const [icon, setIcon] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    UsageStats.getAppIcon(item.packageName).then((b64) => {
+      if (!cancelled && b64) setIcon(b64);
+    });
+    return () => { cancelled = true; };
+  }, [item.packageName]);
+
+  return (
+    <TouchableOpacity
+      style={[styles.appRow, isSelected && styles.appRowSelected]}
+      onPress={() => onToggle(item.packageName)}
+      activeOpacity={0.75}
+    >
+      <View style={styles.appIconWrap}>
+        {icon ? (
+          <Image source={{ uri: `data:image/png;base64,${icon}` }} style={styles.appIconImg} />
+        ) : (
+          <Text style={styles.appIconInitial}>{item.appName[0]?.toUpperCase()}</Text>
+        )}
+      </View>
+      <View style={styles.appInfo}>
+        <Text style={styles.appName}>{item.appName}</Text>
+      </View>
+      <View style={[styles.checkbox, isSelected && styles.checkboxSelected]}>
+        {isSelected && <Text style={styles.checkMark}>✓</Text>}
+      </View>
+    </TouchableOpacity>
+  );
 }
 
 export default function AppSelectionScreen({ navigation }: Props) {
@@ -173,25 +228,14 @@ export default function AppSelectionScreen({ navigation }: Props) {
     }
   };
 
-  const renderItem = ({ item }: { item: AppItem }) => {
-    const isSelected = selected.has(item.packageName);
-    return (
-      <TouchableOpacity
-        style={[styles.appRow, isSelected && styles.appRowSelected]}
-        onPress={() => toggle(item.packageName)}
-        activeOpacity={0.75}
-      >
-        <View style={styles.appInfo}>
-          <View style={styles.nameLine}>
-            <Text style={styles.appName}>{item.appName}</Text>
-          </View>
-        </View>
-        <View style={[styles.checkbox, isSelected && styles.checkboxSelected]}>
-          {isSelected && <Text style={styles.checkMark}>✓</Text>}
-        </View>
-      </TouchableOpacity>
-    );
-  };
+  const renderItem = ({ item }: { item: AppItem }) => (
+    <AppRow
+      item={item}
+      isSelected={selected.has(item.packageName)}
+      onToggle={toggle}
+      styles={styles}
+    />
+  );
 
   return (
     <SafeAreaView style={styles.container}>

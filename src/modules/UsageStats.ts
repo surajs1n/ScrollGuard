@@ -26,6 +26,8 @@ function assertAndroid(): void {
   }
 }
 
+const _iconCache = new Map<string, string>();
+
 export const UsageStats = {
   /** Returns true if the PACKAGE_USAGE_STATS permission has been granted. */
   hasPermission(): Promise<boolean> {
@@ -68,6 +70,23 @@ export const UsageStats = {
     assertAndroid();
     if (typeof Native.getInstalledUserApps !== 'function') return Promise.resolve([]);
     return Native.getInstalledUserApps();
+  },
+
+  /**
+   * Returns the app icon as a Base64 PNG string for use in
+   * <Image source={{ uri: `data:image/png;base64,${b64}` }} />.
+   * Returns empty string if the icon can't be loaded.
+   * Results are cached in-memory so repeated calls for the same package are free.
+   */
+  getAppIcon(packageName: string): Promise<string> {
+    assertAndroid();
+    const cached = _iconCache.get(packageName);
+    if (cached !== undefined) return Promise.resolve(cached);
+    if (typeof Native.getAppIcon !== 'function') return Promise.resolve('');
+    return Native.getAppIcon(packageName).then((b64: string) => {
+      _iconCache.set(packageName, b64);
+      return b64;
+    });
   },
 
   /** Convenience: returns usage for today (midnight → now). */
