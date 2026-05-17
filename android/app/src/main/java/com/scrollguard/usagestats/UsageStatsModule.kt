@@ -1,6 +1,7 @@
 package com.scrollguard.usagestats
 
 import android.app.AppOpsManager
+import android.app.usage.UsageEvents
 import android.app.usage.UsageStats
 import android.app.usage.UsageStatsManager
 import android.content.Context
@@ -111,8 +112,18 @@ class UsageStatsModule(reactContext: ReactApplicationContext) :
     }
 
     /**
-     * Returns usage stats only for the monitored apps that are installed.
-     * Aggregates multiple entries for the same package (UsageStatsManager may return duplicates).
+     * Returns foreground time for monitored apps within [startTime, endTime].
+     *
+     * Uses queryEvents (individual RESUMED/PAUSED events with exact timestamps)
+     * instead of queryUsageStats. This avoids the UTC-bucket boundary problem:
+     * queryUsageStats returns daily buckets aligned to UTC midnight, so for UTC+
+     * timezones the "today" bucket may include yesterday's sessions whose bucket
+     * spans across local midnight. With queryEvents we accumulate only the time
+     * that falls strictly inside the requested window.
+     *
+     * Edge case handled: if an app was already in the foreground at startTime
+     * (e.g. still open from the night before), we count from startTime rather
+     * than missing that session entirely.
      */
     @ReactMethod
     fun getMonitoredAppsUsage(startTime: Double, endTime: Double, promise: Promise) {
@@ -120,44 +131,62 @@ class UsageStatsModule(reactContext: ReactApplicationContext) :
             val usm = reactApplicationContext
                 .getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
 
-            // INTERVAL_BEST lets Android choose the finest granularity for the given
-            // time range. INTERVAL_DAILY over a within-day window returns overlapping
-            // bucket entries that cause the same session to be counted multiple times.
-            val allStats: List<UsageStats> = usm.queryUsageStats(
-                UsageStatsManager.INTERVAL_BEST,
-                startTime.toLong(),
-                endTime.toLong()
-            ) ?: emptyList()
-
-            // Aggregate by package name (OS may return multiple entries per package)
-            val aggregated = mutableMapOf<String, Long>()
+            val events = usm.queryEvents(startTime.toLong(), endTime.toLong())
+            val foregroundStart = mutableMapOf<String, Long>()
+            val totalTime = mutableMapOf<String, Long>()
             val lastUsed = mutableMapOf<String, Long>()
-            allStats.forEach { stat ->
-                if (stat.packageName in MONITORED_PACKAGES) {
-                    aggregated[stat.packageName] =
-                        (aggregated[stat.packageName] ?: 0L) + stat.totalTimeInForeground
-                    lastUsed[stat.packageName] = maxOf(
-                        lastUsed[stat.packageName] ?: 0L,
-                        stat.lastTimeUsed
-                    )
+
+            val event = UsageEvents.Event()
+            @Suppress("DEPRECATION")
+            while (events.hasNextEvent()) {
+                events.getNextEvent(event)
+                val pkg = event.packageName
+                if (pkg !in MONITORED_PACKAGES) continue
+
+                @Suppress("DEPRECATION")
+                when (event.eventType) {
+                    UsageEvents.Event.MOVE_TO_FOREGROUND -> {
+                        foregroundStart[pkg] = event.timeStamp
+                        lastUsed[pkg] = maxOf(lastUsed[pkg] ?: 0L, event.timeStamp)
+                    }
+                    UsageEvents.Event.MOVE_TO_BACKGROUND -> {
+                        // If no FOREGROUND event was seen, the app was open before startTime;
+                        // count from startTime so we don't miss that session.
+                        val start = foregroundStart[pkg] ?: startTime.toLong()
+                        val duration = event.timeStamp - start
+                        if (duration > 0) {
+                            totalTime[pkg] = (totalTime[pkg] ?: 0L) + duration
+                        }
+                        lastUsed[pkg] = maxOf(lastUsed[pkg] ?: 0L, event.timeStamp)
+                        foregroundStart.remove(pkg)
+                    }
                 }
+            }
+
+            // Apps still in the foreground at the end of the query window
+            foregroundStart.forEach { (pkg, start) ->
+                val duration = endTime.toLong() - start
+                if (duration > 0) {
+                    totalTime[pkg] = (totalTime[pkg] ?: 0L) + duration
+                }
+                lastUsed[pkg] = maxOf(lastUsed[pkg] ?: 0L, endTime.toLong())
             }
 
             val pm: PackageManager = reactApplicationContext.packageManager
             val result = WritableNativeArray()
-            aggregated.forEach { (pkg, totalMs) ->
-                val appName = try {
-                    pm.getApplicationLabel(pm.getApplicationInfo(pkg, 0)).toString()
-                } catch (e: PackageManager.NameNotFoundException) {
-                    pkg
+            totalTime.forEach { (pkg, total) ->
+                if (total > 0) {
+                    val appName = try {
+                        pm.getApplicationLabel(pm.getApplicationInfo(pkg, 0)).toString()
+                    } catch (e: PackageManager.NameNotFoundException) { pkg }
+                    val map = WritableNativeMap().apply {
+                        putString("packageName", pkg)
+                        putString("appName", appName)
+                        putDouble("totalTimeMs", total.toDouble())
+                        putDouble("lastTimeUsed", (lastUsed[pkg] ?: 0L).toDouble())
+                    }
+                    result.pushMap(map)
                 }
-                val map = WritableNativeMap().apply {
-                    putString("packageName", pkg)
-                    putString("appName", appName)
-                    putDouble("totalTimeMs", totalMs.toDouble())
-                    putDouble("lastTimeUsed", (lastUsed[pkg] ?: 0L).toDouble())
-                }
-                result.pushMap(map)
             }
             promise.resolve(result)
         } catch (e: SecurityException) {
@@ -234,12 +263,11 @@ class UsageStatsModule(reactContext: ReactApplicationContext) :
 
             val apps = pm.getInstalledApplications(0)
                 .filter { info ->
-                    val isSystemApp = (info.flags and ApplicationInfo.FLAG_SYSTEM) != 0
-                    // FLAG_UPDATED_SYSTEM_APP: pre-installed but updated from Play Store
-                    // (e.g. Hotstar, ShareChat, YouTube Music on OEM devices)
-                    val isUpdatedSystemApp = (info.flags and ApplicationInfo.FLAG_UPDATED_SYSTEM_APP) != 0
+                    // Launcher intent is the canonical definition of "visible in the app drawer".
+                    // System services, kernel apps, and invisible packages have no launcher intent
+                    // and are excluded naturally. Pre-installed apps like YouTube Music, Google
+                    // Photos, and OEM apps all have launcher intents and will appear correctly.
                     val hasLauncher = pm.getLaunchIntentForPackage(info.packageName) != null
-                    (!isSystemApp || isUpdatedSystemApp) &&
                     hasLauncher &&
                     info.packageName != ourPackage &&
                     info.packageName !in curatedPackages

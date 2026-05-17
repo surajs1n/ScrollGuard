@@ -80,13 +80,9 @@ function makeStyles(c: AppColors) {
       borderColor: 'transparent',
     },
     appRowSelected: { borderColor: c.accent },
-    appRowDimmed: { opacity: 0.45 },
     appInfo: { flex: 1 },
     nameLine: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, flexWrap: 'wrap' },
     appName: { fontSize: font.md, fontWeight: '600', color: c.textPrimary },
-    appNameDimmed: { color: c.textSecondary },
-    notInstalledBadge: { backgroundColor: c.border, borderRadius: 4, paddingHorizontal: 6, paddingVertical: 2 },
-    notInstalledText: { color: c.textSecondary, fontSize: 10, fontWeight: '600' },
     checkbox: {
       width: 24,
       height: 24,
@@ -131,9 +127,10 @@ export default function AppSelectionScreen({ navigation }: Props) {
       UsageStats.getCuratedAppsWithStatus().catch(() => [] as CuratedApp[]),
       UsageStats.getInstalledUserApps().catch(() => [] as InstalledApp[]),
     ]).then(([curated, user]) => {
-      const installed = curated.filter((a) => a.installed).sort((a, b) => a.appName.localeCompare(b.appName));
-      const notInstalled = curated.filter((a) => !a.installed).sort((a, b) => a.appName.localeCompare(b.appName));
-      setCuratedApps([...installed, ...notInstalled]);
+      const installedCurated = curated
+        .filter((a) => a.installed)
+        .sort((a, b) => a.appName.localeCompare(b.appName));
+      setCuratedApps(installedCurated);
       setUserApps(user);
       setLoading(false);
     });
@@ -145,21 +142,17 @@ export default function AppSelectionScreen({ navigation }: Props) {
       !q || name.toLowerCase().includes(q) || pkg.toLowerCase().includes(q);
     const filteredCurated: AppItem[] = curatedApps
       .filter((a) => matches(a.appName, a.packageName))
-      .map((a) => ({ packageName: a.packageName, appName: a.appName, installed: a.installed }));
+      .map((a) => ({ packageName: a.packageName, appName: a.appName, installed: true }));
     const filteredUser: AppItem[] = userApps
       .filter((a) => matches(a.appName, a.packageName))
       .map((a) => ({ packageName: a.packageName, appName: a.appName, installed: true }));
     return [
-      { title: 'Popular apps', data: filteredCurated },
+      { title: 'Popular apps on your device', data: filteredCurated },
       { title: 'Other apps on your device', data: filteredUser },
     ].filter((s) => s.data.length > 0);
   }, [curatedApps, userApps, search]);
 
-  const toggle = (pkg: string, installed: boolean) => {
-    if (!installed) {
-      Alert.alert('App not installed', "This app isn't on your device yet. Install it first, then come back.");
-      return;
-    }
+  const toggle = (pkg: string) => {
     setSelected((prev) => {
       const next = new Set(prev);
       if (next.has(pkg)) next.delete(pkg);
@@ -184,20 +177,13 @@ export default function AppSelectionScreen({ navigation }: Props) {
     const isSelected = selected.has(item.packageName);
     return (
       <TouchableOpacity
-        style={[styles.appRow, isSelected && styles.appRowSelected, !item.installed && styles.appRowDimmed]}
-        onPress={() => toggle(item.packageName, item.installed)}
-        activeOpacity={item.installed ? 0.75 : 0.4}
+        style={[styles.appRow, isSelected && styles.appRowSelected]}
+        onPress={() => toggle(item.packageName)}
+        activeOpacity={0.75}
       >
         <View style={styles.appInfo}>
           <View style={styles.nameLine}>
-            <Text style={[styles.appName, !item.installed && styles.appNameDimmed]}>
-              {item.appName}
-            </Text>
-            {!item.installed && (
-              <View style={styles.notInstalledBadge}>
-                <Text style={styles.notInstalledText}>not installed</Text>
-              </View>
-            )}
+            <Text style={styles.appName}>{item.appName}</Text>
           </View>
         </View>
         <View style={[styles.checkbox, isSelected && styles.checkboxSelected]}>
@@ -215,7 +201,7 @@ export default function AppSelectionScreen({ navigation }: Props) {
         </TouchableOpacity>
         <Text style={styles.step}>Step 3 of 3</Text>
         <Text style={styles.title}>Which apps do you want to watch?</Text>
-        <Text style={styles.subtitle}>Greyed out apps aren't installed on this device yet.</Text>
+        <Text style={styles.subtitle}>Only apps installed on your device are shown.</Text>
       </View>
 
       <View style={styles.searchContainer}>
