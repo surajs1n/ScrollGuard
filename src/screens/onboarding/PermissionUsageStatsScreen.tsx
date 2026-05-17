@@ -3,15 +3,20 @@ import {
   View,
   Text,
   StyleSheet,
-  TouchableOpacity,
-  SafeAreaView,
+  ScrollView,
   AppState,
   AppStateStatus,
 } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../navigation/AppNavigator';
 import { UsageStats } from '../../modules/UsageStats';
-import { colors, spacing, font } from '../../theme';
+import { SG, SgFonts } from '../../theme';
+import {
+  SgScreen,
+  SgButton,
+  StepPill,
+  PermissionStatusPill,
+} from '../../components/sg';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'PermissionUsageStats'>;
 
@@ -27,8 +32,6 @@ export default function PermissionUsageStatsScreen({ navigation }: Props) {
 
   useEffect(() => {
     checkPerm();
-
-    // Re-check when user returns from Settings
     const sub = AppState.addEventListener('change', (state: AppStateStatus) => {
       if (state === 'active') checkPerm();
     });
@@ -44,126 +47,99 @@ export default function PermissionUsageStatsScreen({ navigation }: Props) {
   };
 
   return (
-    <SafeAreaView style={styles.container}>
-      <View style={styles.content}>
-        <Text style={styles.step}>Step 1 of 3</Text>
-        <Text style={styles.title}>Screen time data</Text>
-        <Text style={styles.description}>
-          ScrollGuard needs to read how much time you spend in each app.
-          {'\n\n'}
-          This data never leaves your phone. It's stored only on your device and
-          used exclusively to show you your own progress.
-          {'\n\n'}
-          Android requires you to enable this manually in Settings:
-          {'\n'}
-          Settings → Digital Wellbeing → Apps with Usage Access → ScrollGuard
+    <SgScreen>
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={styles.scroll}
+        showsVerticalScrollIndicator={false}
+      >
+        <View style={{ height: 32 }} />
+        <StepPill n={1} total={3} />
+
+        <Text style={styles.headline}>Screen-time{'\n'}access</Text>
+
+        <Text style={styles.body}>
+          ScrollGuard reads how much time you spend in each app. The data never leaves your phone — it's stored only on your device and used to show you your own progress.
         </Text>
 
-        <View style={styles.permBox}>
-          <Text style={styles.permIcon}>{permGranted ? '✅' : '⏳'}</Text>
-          <Text style={styles.permStatus}>
-            {checking
-              ? 'Checking…'
-              : permGranted
-              ? 'Permission granted'
-              : 'Permission not yet granted'}
+        {/* Pathway block */}
+        <View style={styles.pathwayBox}>
+          <Text style={styles.pathwayLabel}>WHERE TO ENABLE</Text>
+          <Text style={styles.pathwayText}>
+            Settings → Digital Wellbeing → Apps with Usage Access → ScrollGuard
           </Text>
         </View>
-      </View>
 
-      <View style={styles.footer}>
+        <View style={{ marginTop: 24 }}>
+          <PermissionStatusPill granted={!checking && permGranted} />
+        </View>
+
+        <View style={{ flex: 1, minHeight: 32 }} />
+
         {!permGranted ? (
-          <TouchableOpacity
-            style={styles.primaryBtn}
-            onPress={handleGrant}
-            activeOpacity={0.85}
-          >
-            <Text style={styles.primaryBtnText}>Open Settings</Text>
-          </TouchableOpacity>
+          <>
+            <SgButton onPress={handleGrant} label="Open Settings →" />
+            <View style={{ height: 12 }} />
+            <SgButton onPress={handleContinue} label="Skip for now" ghost />
+          </>
         ) : (
-          <TouchableOpacity
-            style={styles.primaryBtn}
-            onPress={handleContinue}
-            activeOpacity={0.85}
-          >
-            <Text style={styles.primaryBtnText}>Continue →</Text>
-          </TouchableOpacity>
+          <SgButton onPress={handleContinue} label="Continue →" />
         )}
 
-        {!permGranted && (
-          <TouchableOpacity style={styles.skipBtn} onPress={handleContinue}>
-            <Text style={styles.skipText}>Skip for now (limited features)</Text>
-          </TouchableOpacity>
-        )}
-      </View>
-    </SafeAreaView>
+        <Text style={styles.finePrint}>
+          Required. ScrollGuard can't see anything else — only time per app.
+        </Text>
+        <View style={{ height: 12 }} />
+      </ScrollView>
+    </SgScreen>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: colors.bg,
-    paddingHorizontal: spacing.lg,
+  scroll: { flexGrow: 1, paddingHorizontal: 28, paddingBottom: 28 },
+  headline: {
+    fontFamily: SgFonts.display,
+    fontSize: 40,
+    color: SG.fg,
+    letterSpacing: -0.8,
+    lineHeight: 44,
+    marginTop: 20,
   },
-  content: {
-    flex: 1,
-    paddingTop: spacing.xxl,
+  body: {
+    fontFamily: SgFonts.ui,
+    fontSize: 15,
+    color: SG.fg2,
+    lineHeight: 23,
+    letterSpacing: -0.1,
+    marginTop: 20,
   },
-  step: {
-    color: colors.accent,
-    fontSize: font.sm,
-    fontWeight: '600',
-    marginBottom: spacing.sm,
+  pathwayBox: {
+    marginTop: 20,
+    padding: 16,
+    backgroundColor: SG.bg2,
+    borderWidth: 1,
+    borderColor: SG.lineSoft,
+    borderRadius: SG.rMd,
   },
-  title: {
-    fontSize: font.xl,
-    fontWeight: '700',
-    color: colors.textPrimary,
-    marginBottom: spacing.lg,
+  pathwayLabel: {
+    fontFamily: SgFonts.mono,
+    fontSize: 10,
+    color: SG.fg3,
+    letterSpacing: 1.2,
+    marginBottom: 8,
   },
-  description: {
-    fontSize: font.md,
-    color: colors.textSecondary,
-    lineHeight: 26,
+  pathwayText: {
+    fontFamily: SgFonts.mono,
+    fontSize: 12.5,
+    color: SG.fg2,
+    lineHeight: 20,
   },
-  permBox: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: colors.surface,
-    borderRadius: 12,
-    padding: spacing.md,
-    marginTop: spacing.xl,
-    gap: spacing.sm,
-  },
-  permIcon: {
-    fontSize: font.lg,
-  },
-  permStatus: {
-    fontSize: font.md,
-    color: colors.textPrimary,
-  },
-  footer: {
-    paddingBottom: spacing.xl,
-  },
-  primaryBtn: {
-    backgroundColor: colors.accent,
-    paddingVertical: spacing.md,
-    borderRadius: 12,
-    alignItems: 'center',
-    marginBottom: spacing.sm,
-  },
-  primaryBtnText: {
-    color: '#fff',
-    fontSize: font.md,
-    fontWeight: '600',
-  },
-  skipBtn: {
-    paddingVertical: spacing.sm,
-    alignItems: 'center',
-  },
-  skipText: {
-    color: colors.textSecondary,
-    fontSize: font.sm,
+  finePrint: {
+    fontFamily: SgFonts.ui,
+    fontSize: 11.5,
+    color: SG.fg4,
+    textAlign: 'center',
+    lineHeight: 16,
+    marginTop: 14,
   },
 });

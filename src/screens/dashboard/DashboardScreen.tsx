@@ -4,11 +4,9 @@ import {
   View,
   Text,
   StyleSheet,
-  SafeAreaView,
   ScrollView,
   TouchableOpacity,
   RefreshControl,
-  StatusBar,
   Alert,
   AppState,
   AppStateStatus,
@@ -30,14 +28,16 @@ import {
 import { MonitorService } from '../../modules/MonitorService';
 import {
   INTENSITY_PRESETS,
-  INTENSITY_MESSAGES,
   getBannerPhase,
   DEFAULT_INTENSITY,
   IntensityLevel,
+  BannerPhase,
 } from '../../config/intensityPresets';
+import { getGreeting, parseGreeting } from '../../config/greetings';
 import activities from '../../data/activities.json';
-import { useTheme, spacing, font } from '../../ThemeContext';
-import { AppColors } from '../../ThemeContext';
+import { useTheme } from '../../ThemeContext';
+import { SG, SgFonts } from '../../theme';
+import { SgScreen, SgMark, SgEyebrow } from '../../components/sg';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Dashboard'>;
 
@@ -49,124 +49,164 @@ interface Activity {
 }
 
 const ALL_ACTIVITIES: Activity[] = activities as Activity[];
-const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-const BAR_CHART_HEIGHT = 120;
+const BAR_H = 140;
+const DAY_SHORT = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
+const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
-function msToMinutes(ms: number): number {
-  return Math.round(ms / 60_000);
-}
+function msToMin(ms: number) { return Math.round(ms / 60_000); }
 
-function formatMinutes(min: number): string {
+function fmtMin(min: number): string {
   if (min < 60) return `${min}m`;
   const h = Math.floor(min / 60);
   const m = min % 60;
   return m > 0 ? `${h}h ${m}m` : `${h}h`;
 }
 
-function pickRandomActivities(count = 3): Activity[] {
-  return [...ALL_ACTIVITIES].sort(() => Math.random() - 0.5).slice(0, count);
-}
-
 function weekRangeLabel(data: { date: string }[]): string {
   if (data.length < 7) return '';
-  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
   const s = new Date(data[0].date);
   const e = new Date(data[6].date);
-  if (s.getMonth() === e.getMonth()) {
-    return `${months[s.getMonth()]} ${s.getDate()} – ${e.getDate()}`;
+  if (s.getMonth() === e.getMonth()) return `${MONTHS[s.getMonth()]} ${s.getDate()} – ${e.getDate()}`;
+  return `${MONTHS[s.getMonth()]} ${s.getDate()} – ${MONTHS[e.getMonth()]} ${e.getDate()}`;
+}
+
+function pickActivities(n = 3): Activity[] {
+  return [...ALL_ACTIVITIES].sort(() => Math.random() - 0.5).slice(0, n);
+}
+
+function phaseBadgeText(
+  phase: BannerPhase,
+  preset: ReturnType<typeof INTENSITY_PRESETS['balanced']['sampleDays'] extends number ? () => typeof INTENSITY_PRESETS['balanced'] : never>,
+  daysSinceInstall: number,
+  currentWeek: number,
+  sampleDays: number,
+): string {
+  if (phase === 'observer') {
+    return `DAY ${daysSinceInstall + 1} OF ${sampleDays} · OBSERVING`;
   }
-  return `${months[s.getMonth()]} ${s.getDate()} – ${months[e.getMonth()]} ${e.getDate()}`;
+  const phaseLabel: Record<BannerPhase, string> = {
+    observer:    'OBSERVING',
+    active:      'ACTIVE',
+    progress:    'BUILDING',
+    maintenance: 'MAINTAINED',
+  };
+  return `WEEK ${currentWeek} · ${phaseLabel[phase]}`;
 }
 
-function makeChartStyles(c: AppColors) {
-  return StyleSheet.create({
-    barsRow: {
-      flexDirection: 'row',
-      alignItems: 'flex-end',
-      height: BAR_CHART_HEIGHT + 24,
-      gap: 5,
-    },
-    barCol: {
-      flex: 1,
-      alignItems: 'center',
-      justifyContent: 'flex-end',
-      height: BAR_CHART_HEIGHT + 24,
-    },
-    barTooltip: {
-      color: c.textPrimary,
-      fontSize: 10,
-      fontWeight: '700' as const,
-      marginBottom: 3,
-      backgroundColor: c.bg,
-      paddingHorizontal: 4,
-      paddingVertical: 1,
-      borderRadius: 4,
-      overflow: 'hidden' as const,
-    },
-    barTrack: { width: '100%', height: BAR_CHART_HEIGHT, justifyContent: 'flex-end' as const },
-    bar: { width: '100%', borderRadius: 4 },
-    barDefault: { backgroundColor: c.accent, opacity: 0.65 },
-    barSelected: { backgroundColor: c.accentLight, opacity: 1 },
-    labelsRow: { flexDirection: 'row' as const, marginTop: 6, gap: 5 },
-    dayLabel: { flex: 1, textAlign: 'center' as const, fontSize: 10, color: c.textSecondary },
-    dayLabelSelected: { color: c.accentLight, fontWeight: '700' as const },
-  });
-}
+// ── Weekly bar chart ──────────────────────────────────────────
 
-function WeeklyBarChart({
+function WeekChart({
   data,
-  selectedDay,
-  onDayPress,
+  accent,
+  today,
+  onPrev,
+  onNext,
+  canGoNext,
+  rangeLabel,
+  targetMin,
 }: {
   data: { date: string; totalMs: number }[];
-  selectedDay: number | null;
-  onDayPress: (i: number | null) => void;
+  accent: string;
+  today: string;
+  onPrev: () => void;
+  onNext: () => void;
+  canGoNext: boolean;
+  rangeLabel: string;
+  targetMin: number;
 }) {
-  const { colors } = useTheme();
-  const chartStyles = useMemo(() => makeChartStyles(colors), [colors]);
+  const [selectedDay, setSelectedDay] = useState<number | null>(null);
 
   if (data.length < 7) return null;
-  const maxMs = Math.max(...data.map((d) => d.totalMs), 60_000);
+
+  const maxMs = Math.max(...data.map((d) => d.totalMs), targetMin * 60_000 * 1.5, 60_000);
+  const targetRatio = targetMin > 0 ? (targetMin * 60_000) / maxMs : 0;
+  const targetY = (1 - targetRatio) * BAR_H;
 
   return (
-    <View>
-      <View style={chartStyles.barsRow}>
-        {data.map((d, i) => {
-          const ratio = d.totalMs / maxMs;
-          const barH = Math.max(4, ratio * BAR_CHART_HEIGHT);
-          const isSelected = selectedDay === i;
-          return (
-            <TouchableOpacity
-              key={i}
-              style={chartStyles.barCol}
-              onPress={() => onDayPress(isSelected ? null : i)}
-              activeOpacity={0.7}
-            >
-              {isSelected && d.totalMs > 0 && (
-                <Text style={chartStyles.barTooltip}>
-                  {formatMinutes(msToMinutes(d.totalMs))}
-                </Text>
-              )}
-              <View style={chartStyles.barTrack}>
-                <View
-                  style={[
-                    chartStyles.bar,
-                    { height: barH },
-                    isSelected ? chartStyles.barSelected : chartStyles.barDefault,
-                  ]}
-                />
-              </View>
-            </TouchableOpacity>
-          );
-        })}
+    <View style={chartStyles.card}>
+      {/* Header row */}
+      <View style={chartStyles.headerRow}>
+        <View style={{ flex: 1 }}>
+          <SgEyebrow>This week</SgEyebrow>
+          <Text style={chartStyles.rangeLabel}>{rangeLabel}</Text>
+        </View>
+        <View style={chartStyles.navRow}>
+          <TouchableOpacity onPress={onPrev} style={chartStyles.navBtn} activeOpacity={0.7}>
+            <Text style={chartStyles.navArrow}>‹</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={onNext}
+            style={chartStyles.navBtn}
+            disabled={!canGoNext}
+            activeOpacity={canGoNext ? 0.7 : 0.3}
+          >
+            <Text style={[chartStyles.navArrow, !canGoNext && { color: SG.line }]}>›</Text>
+          </TouchableOpacity>
+        </View>
       </View>
+
+      {/* Chart body */}
+      <View style={{ position: 'relative', marginTop: 16, height: BAR_H }}>
+        {/* Dashed target line */}
+        {targetMin > 0 && (
+          <>
+            <View style={[chartStyles.targetLine, { top: targetY }]} />
+            <Text style={[chartStyles.targetLabel, { top: targetY - 9 }]}>
+              {targetMin}m · target
+            </Text>
+          </>
+        )}
+
+        {/* Bars */}
+        <View style={chartStyles.barsRow}>
+          {data.map((d, i) => {
+            const isToday = d.date === today;
+            const isFuture = d.totalMs === 0 && d.date > today;
+            const overTarget = targetMin > 0 && msToMin(d.totalMs) > targetMin;
+            const ratio = d.totalMs / maxMs;
+            const barH = Math.max(4, ratio * BAR_H);
+            const isSelected = selectedDay === i;
+
+            let barColor = '#2D3A58'; // past/default muted blue
+            if (isToday) barColor = accent;
+            else if (overTarget) barColor = SG.strict + 'CC';
+
+            return (
+              <TouchableOpacity
+                key={i}
+                style={chartStyles.barCol}
+                onPress={() => setSelectedDay(isSelected ? null : i)}
+                activeOpacity={0.75}
+              >
+                {isSelected && d.totalMs > 0 && (
+                  <Text style={[chartStyles.barTooltip, { color: isToday ? accent : SG.fg2 }]}>
+                    {fmtMin(msToMin(d.totalMs))}
+                  </Text>
+                )}
+                <View style={{ width: '100%', height: BAR_H, justifyContent: 'flex-end' }}>
+                  {isFuture ? (
+                    <View style={chartStyles.futureBar} />
+                  ) : (
+                    <View style={[chartStyles.bar, { height: barH, backgroundColor: barColor }]} />
+                  )}
+                </View>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+      </View>
+
+      {/* Day labels */}
       <View style={chartStyles.labelsRow}>
-        {DAY_LABELS.map((label, i) => (
+        {DAY_SHORT.map((d, i) => (
           <Text
             key={i}
-            style={[chartStyles.dayLabel, selectedDay === i && chartStyles.dayLabelSelected]}
+            style={[
+              chartStyles.dayLabel,
+              data[i]?.date === today && { color: accent, fontFamily: SgFonts.monoMedium },
+            ]}
           >
-            {label}
+            {d}
           </Text>
         ))}
       </View>
@@ -174,436 +214,642 @@ function WeeklyBarChart({
   );
 }
 
-function makeStyles(c: AppColors) {
-  return StyleSheet.create({
-    container: { flex: 1, backgroundColor: c.bg },
-    scroll: { paddingHorizontal: spacing.lg, paddingBottom: spacing.xxl },
+const chartStyles = StyleSheet.create({
+  card: {
+    backgroundColor: SG.surface,
+    borderWidth: 1,
+    borderColor: SG.lineSoft,
+    borderRadius: SG.rLg,
+    padding: 18,
+    marginBottom: 14,
+  },
+  headerRow: { flexDirection: 'row', alignItems: 'flex-start' },
+  rangeLabel: {
+    fontFamily: SgFonts.display,
+    fontSize: 22,
+    color: SG.fg,
+    letterSpacing: -0.2,
+    marginTop: 4,
+  },
+  navRow: { flexDirection: 'row', gap: 4 },
+  navBtn: {
+    width: 30, height: 30, borderRadius: 8,
+    borderWidth: 1, borderColor: SG.lineSoft,
+    justifyContent: 'center', alignItems: 'center',
+  },
+  navArrow: { fontFamily: SgFonts.ui, fontSize: 18, color: SG.fg2 },
+  targetLine: {
+    position: 'absolute',
+    left: 0,
+    right: 48,
+    borderTopWidth: 1,
+    borderTopColor: SG.line,
+    borderStyle: 'dashed',
+  },
+  targetLabel: {
+    position: 'absolute',
+    right: 0,
+    fontFamily: SgFonts.mono,
+    fontSize: 10,
+    color: SG.fg3,
+  },
+  barsRow: {
+    position: 'absolute',
+    left: 0,
+    right: 52,
+    top: 0,
+    bottom: 0,
+    flexDirection: 'row',
+    gap: 6,
+  },
+  barCol: { flex: 1, alignItems: 'center', justifyContent: 'flex-end', height: BAR_H },
+  barTooltip: {
+    fontFamily: SgFonts.mono,
+    fontSize: 10,
+    position: 'absolute',
+    top: -14,
+  },
+  bar: { width: '100%', borderRadius: 5 },
+  futureBar: {
+    width: '100%',
+    height: 16,
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: SG.lineSoft,
+    borderStyle: 'dashed',
+  },
+  labelsRow: { flexDirection: 'row', marginTop: 10, gap: 6, paddingRight: 52 },
+  dayLabel: {
+    flex: 1,
+    textAlign: 'center',
+    fontFamily: SgFonts.mono,
+    fontSize: 11,
+    color: SG.fg3,
+  },
+});
 
-    header: {
-      flexDirection: 'row',
-      justifyContent: 'space-between',
-      alignItems: 'center',
-      paddingTop: spacing.lg,
-      paddingBottom: spacing.md,
-    },
-    headerTitle: { fontSize: font.lg, fontWeight: '700', color: c.textPrimary },
-    headerRight: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-    weekBadge: {
-      backgroundColor: c.surface,
-      paddingHorizontal: spacing.sm,
-      paddingVertical: 4,
-      borderRadius: 8,
-    },
-    weekText: { color: c.accent, fontSize: font.sm, fontWeight: '600' },
-    gearBtn: { padding: 4 },
-    gearIcon: { fontSize: 28, color: c.accentLight },
+// ── Stat tile ─────────────────────────────────────────────────
 
-    phaseBanner: {
-      backgroundColor: c.surface,
-      borderRadius: 12,
-      padding: spacing.md,
-      marginBottom: spacing.lg,
-      borderLeftWidth: 3,
-      borderLeftColor: c.accent,
-    },
-    phaseBannerTitle: { color: c.textPrimary, fontWeight: '600', marginBottom: 4 },
-    phaseBannerBody: { color: c.textSecondary, fontSize: font.sm, lineHeight: 20 },
-
-    chartCard: {
-      backgroundColor: c.surface,
-      borderRadius: 16,
-      padding: spacing.md,
-      marginBottom: spacing.md,
-      borderTopWidth: 3,
-      borderTopColor: c.accent,
-      borderWidth: 1,
-      borderColor: c.border,
-    },
-    chartNav: { flexDirection: 'row', alignItems: 'center', marginBottom: spacing.sm },
-    chartNavLeft: { flex: 1, alignItems: 'flex-start' },
-    chartNavRight: { flex: 1, flexDirection: 'row', alignItems: 'center' },
-    todayBtn: {
-      backgroundColor: `${c.accent}22`,
-      paddingHorizontal: spacing.sm,
-      paddingVertical: 5,
-      borderRadius: 8,
-      borderWidth: 1,
-      borderColor: c.accent,
-    },
-    todayBtnText: { color: c.accentLight, fontSize: font.xs, fontWeight: '700' },
-    navBtn: { width: 28, alignItems: 'center', justifyContent: 'center', paddingVertical: 4 },
-    navArrow: { fontSize: 22, color: c.accentLight, fontWeight: '600' },
-    navArrowDisabled: { color: c.border },
-    chartRangeLabel: {
-      flex: 1,
-      textAlign: 'center',
-      fontSize: font.sm,
-      fontWeight: '600',
-      color: c.textSecondary,
-    },
-
-    twinRow: { flexDirection: 'row', marginBottom: spacing.lg },
-    twinCard: {
-      flex: 1,
-      backgroundColor: c.surface,
-      borderRadius: 16,
-      padding: spacing.md,
-      alignItems: 'center',
-      borderTopWidth: 3,
-      borderTopColor: c.accent,
-      borderWidth: 1,
-      borderColor: c.border,
-    },
-    twinValue: { fontSize: font.xxl, fontWeight: '800', color: c.textPrimary },
-    twinLabel: { fontSize: font.xs, color: c.textSecondary, marginTop: 4, textAlign: 'center' },
-    twinSub: { fontSize: font.xs, color: c.textSecondary, marginTop: 4 },
-    deltaUp: { color: c.danger },
-    deltaDown: { color: c.success },
-
-    section: { marginBottom: spacing.lg },
-    sectionHeader: {
-      flexDirection: 'row',
-      justifyContent: 'space-between',
-      alignItems: 'center',
-      marginBottom: spacing.sm,
-    },
-    sectionTitle: {
-      fontSize: font.lg,
-      fontWeight: '700',
-      color: c.textPrimary,
-      marginBottom: spacing.sm,
-    },
-    sectionToggle: { color: c.textSecondary, fontSize: font.md },
-
-    appRow: {
-      backgroundColor: c.surface,
-      borderRadius: 12,
-      padding: spacing.md,
-      marginBottom: spacing.sm,
-      flexDirection: 'row',
-      justifyContent: 'space-between',
-      alignItems: 'center',
-    },
-    appInfo: { flex: 1 },
-    appName: { fontSize: font.md, fontWeight: '600', color: c.textPrimary },
-    appTime: { fontSize: font.sm, color: c.accentLight, marginTop: 2 },
-    appYest: { fontSize: font.xs, color: c.textSecondary },
-    emptyMsg: { color: c.textSecondary, fontSize: font.sm, marginTop: spacing.sm },
-
-    activityCard: {
-      backgroundColor: c.surface,
-      borderRadius: 12,
-      padding: spacing.md,
-      marginBottom: spacing.sm,
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: spacing.sm,
-    },
-    activityDone: { opacity: 0.55 },
-    activityInfo: { flex: 1 },
-    activityLabel: { fontSize: font.md, color: c.textPrimary, fontWeight: '500' },
-    activityLabelDone: { textDecorationLine: 'line-through' as const },
-    activityMeta: { fontSize: font.xs, color: c.textSecondary, marginTop: 4 },
-    doneBtn: {
-      backgroundColor: c.accent,
-      paddingHorizontal: spacing.md,
-      paddingVertical: spacing.sm,
-      borderRadius: 8,
-    },
-    doneBtnDone: { backgroundColor: c.success },
-    doneBtnText: { color: '#fff', fontSize: font.sm, fontWeight: '600' },
-
-    privacyFooter: {
-      color: c.textSecondary,
-      fontSize: font.xs,
-      textAlign: 'center',
-      marginTop: spacing.lg,
-    },
-  });
+function StatTile({ label, value, unit, hint }: {
+  label: string; value: string; unit?: string; hint?: string;
+}) {
+  return (
+    <View style={statStyles.tile}>
+      <SgEyebrow>{label}</SgEyebrow>
+      <View style={statStyles.numberRow}>
+        <Text style={statStyles.value}>{value}</Text>
+        {unit && <Text style={statStyles.unit}>{unit}</Text>}
+      </View>
+      {hint != null && (
+        <Text style={statStyles.hint} numberOfLines={1}>{hint}</Text>
+      )}
+    </View>
+  );
 }
+
+const statStyles = StyleSheet.create({
+  tile: {
+    flex: 1,
+    backgroundColor: SG.surface,
+    borderWidth: 1,
+    borderColor: SG.lineSoft,
+    borderRadius: SG.rLg,
+    padding: 16,
+  },
+  numberRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 5, marginTop: 8, lineHeight: 1 },
+  value: {
+    fontFamily: SgFonts.displayItalic,
+    fontSize: 42,
+    color: SG.fg,
+    lineHeight: 44,
+  },
+  unit: {
+    fontFamily: SgFonts.uiMedium,
+    fontSize: 13,
+    color: SG.fg3,
+    marginBottom: 4,
+  },
+  hint: {
+    fontFamily: SgFonts.mono,
+    fontSize: 10.5,
+    color: SG.fg4,
+    marginTop: 8,
+  },
+});
+
+// ── App breakdown row ─────────────────────────────────────────
+
+function AppBreakdownRow({
+  name,
+  mins,
+  targetMin,
+  isLast,
+  accent,
+}: {
+  name: string;
+  mins: number;
+  targetMin: number;
+  isLast: boolean;
+  accent: string;
+}) {
+  const over = targetMin > 0 && mins > targetMin;
+  const barMax = targetMin > 0 ? targetMin * 1.5 : Math.max(mins, 60);
+  const barPct = Math.min(1, mins / barMax);
+  const tickPct = targetMin > 0 ? targetMin / barMax : 0;
+  const barColor = over ? SG.strict : accent;
+
+  return (
+    <View style={[breakdownStyles.row, !isLast && { borderBottomWidth: 1, borderBottomColor: SG.lineSoft }]}>
+      <View style={breakdownStyles.topRow}>
+        <View style={[breakdownStyles.avatar, { backgroundColor: SG.bg2 }]}>
+          <Text style={breakdownStyles.avatarLetter}>{name[0]?.toUpperCase()}</Text>
+        </View>
+        <Text style={breakdownStyles.appName} numberOfLines={1}>{name}</Text>
+        <View style={breakdownStyles.timeRow}>
+          <Text style={[breakdownStyles.timeVal, over && { color: SG.strict }]}>{mins}</Text>
+          <Text style={breakdownStyles.timeUnit}>m</Text>
+        </View>
+      </View>
+      {/* Progress bar */}
+      <View style={breakdownStyles.track}>
+        <View style={[breakdownStyles.fill, { width: `${barPct * 100}%`, backgroundColor: barColor }]} />
+        {tickPct > 0 && (
+          <View style={[breakdownStyles.tick, { left: `${tickPct * 100}%` }]} />
+        )}
+      </View>
+      <View style={breakdownStyles.bottomRow}>
+        <Text style={breakdownStyles.bottomText}>
+          {targetMin > 0
+            ? (over ? `+${mins - targetMin}m over target` : `${targetMin - mins}m under target`)
+            : `${mins}m today`}
+        </Text>
+        {targetMin > 0 && <Text style={breakdownStyles.bottomText}>TARGET · {targetMin}m</Text>}
+      </View>
+    </View>
+  );
+}
+
+const breakdownStyles = StyleSheet.create({
+  row: { padding: 14 },
+  topRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  avatar: {
+    width: 28, height: 28, borderRadius: 8,
+    justifyContent: 'center', alignItems: 'center', flexShrink: 0,
+  },
+  avatarLetter: { fontFamily: SgFonts.uiSemiBold, fontSize: 13, color: SG.fg3 },
+  appName: { flex: 1, fontFamily: SgFonts.uiMedium, fontSize: 14.5, color: SG.fg },
+  timeRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 2 },
+  timeVal: { fontFamily: SgFonts.displayItalic, fontSize: 22, color: SG.fg, lineHeight: 24 },
+  timeUnit: { fontFamily: SgFonts.ui, fontSize: 12, color: SG.fg3, marginBottom: 1 },
+  track: {
+    height: 4,
+    borderRadius: 999,
+    backgroundColor: SG.bg2,
+    marginTop: 10,
+    overflow: 'hidden',
+    position: 'relative',
+  },
+  fill: { position: 'absolute', left: 0, top: 0, bottom: 0, borderRadius: 999 },
+  tick: {
+    position: 'absolute',
+    top: -2,
+    bottom: -2,
+    width: 1.5,
+    backgroundColor: SG.fg3,
+  },
+  bottomRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 6,
+  },
+  bottomText: { fontFamily: SgFonts.mono, fontSize: 10.5, color: SG.fg4 },
+});
+
+// ── Suggestion card ───────────────────────────────────────────
+
+function SuggestionCard({
+  activity,
+  done,
+  onPress,
+  accent,
+  accentSoft,
+  accentLine,
+  isLast,
+}: {
+  activity: Activity;
+  done: boolean;
+  onPress: () => void;
+  accent: string;
+  accentSoft: string;
+  accentLine: string;
+  isLast: boolean;
+}) {
+  return (
+    <TouchableOpacity
+      onPress={onPress}
+      activeOpacity={0.75}
+      style={[
+        suggStyles.row,
+        !isLast && { borderBottomWidth: 1, borderBottomColor: SG.lineSoft },
+      ]}
+    >
+      <View style={suggStyles.iconBox}>
+        <Text style={[suggStyles.iconText, { color: accent }]}>✦</Text>
+      </View>
+      <View style={{ flex: 1 }}>
+        <Text style={[suggStyles.title, done && { textDecorationLine: 'line-through', color: SG.fg3 }]}>
+          {activity.label}
+        </Text>
+        <Text style={suggStyles.meta}>
+          {activity.durationMin} MIN · {activity.category.toUpperCase()}
+        </Text>
+      </View>
+      <TouchableOpacity
+        onPress={onPress}
+        activeOpacity={0.8}
+        style={[
+          suggStyles.doneBtn,
+          done
+            ? { backgroundColor: 'transparent', borderColor: SG.gentleLine }
+            : { backgroundColor: accentSoft, borderColor: accentLine },
+        ]}
+      >
+        <Text style={[suggStyles.doneBtnText, { color: done ? SG.gentle : accent }]}>
+          {done ? '✓ Done' : 'I did it'}
+        </Text>
+      </TouchableOpacity>
+    </TouchableOpacity>
+  );
+}
+
+const suggStyles = StyleSheet.create({
+  row: { padding: 14, flexDirection: 'row', alignItems: 'center', gap: 14 },
+  iconBox: {
+    width: 36, height: 36, borderRadius: 10,
+    backgroundColor: SG.bg2,
+    borderWidth: 1, borderColor: SG.lineSoft,
+    justifyContent: 'center', alignItems: 'center',
+    flexShrink: 0,
+  },
+  iconText: { fontSize: 16 },
+  title: { fontFamily: SgFonts.uiMedium, fontSize: 14.5, color: SG.fg, letterSpacing: -0.1 },
+  meta: { fontFamily: SgFonts.mono, fontSize: 11, color: SG.fg3, marginTop: 3 },
+  doneBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 999,
+    borderWidth: 1,
+    flexShrink: 0,
+  },
+  doneBtnText: { fontFamily: SgFonts.uiMedium, fontSize: 12.5 },
+});
+
+// ── Section header (eyebrow + count) ─────────────────────────
+
+function SectionHeader({ title, count }: { title: string; count?: string }) {
+  return (
+    <View style={secStyles.row}>
+      <Text style={secStyles.title}>{title.toUpperCase()}</Text>
+      {count && <Text style={secStyles.count}>{count}</Text>}
+    </View>
+  );
+}
+
+const secStyles = StyleSheet.create({
+  row: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 10 },
+  title: { fontFamily: SgFonts.mono, fontSize: 11.5, color: SG.fg3, letterSpacing: 1.1 },
+  count: { fontFamily: SgFonts.mono, fontSize: 10.5, color: SG.fg4 },
+});
+
+// ── Main screen ───────────────────────────────────────────────
 
 export default function DashboardScreen({ route, navigation }: Props) {
   const openSuggestion = route.params?.openSuggestion ?? false;
-  const { colors, refreshTheme } = useTheme();
-  const styles = useMemo(() => makeStyles(colors), [colors]);
+  const { accent, accentSoft, accentLine, intensity, refreshTheme } = useTheme();
 
-  const [todayUsage, setTodayUsage] = useState<AppUsage[]>([]);
-  const [yesterdayUsage, setYesterdayUsage] = useState<AppUsage[]>([]);
-  const [streak, setStreak] = useState<StreakData>({ currentStreak: 0, longestStreak: 0, lastActiveDate: null });
-  const [completedToday, setCompletedToday] = useState<string[]>([]);
-  const [suggestedActivities] = useState<Activity[]>(() => pickRandomActivities(3));
-  const [currentWeek, setCurrentWeek] = useState(1);
-  const [daysSinceInstall, setDaysSinceInstall] = useState(0);
-  const [intensity, setIntensity] = useState<IntensityLevel>(DEFAULT_INTENSITY);
-  const [weeklyData, setWeeklyData] = useState<{ date: string; totalMs: number }[]>([]);
-  const [chartWeekOffset, setChartWeekOffset] = useState(0);
-  const [selectedChartDay, setSelectedChartDay] = useState<number | null>(null);
-  const [refreshing, setRefreshing] = useState(false);
-  const [showSuggestions, setShowSuggestions] = useState(openSuggestion);
+  const [todayUsage, setTodayUsage]     = useState<AppUsage[]>([]);
+  const [streak, setStreak]             = useState<StreakData>({ currentStreak: 0, longestStreak: 0, lastActiveDate: null });
+  const [completedToday, setCompleted]  = useState<string[]>([]);
+  const [suggestedActivities]           = useState<Activity[]>(() => pickActivities(3));
+  const [currentWeek, setCurrentWeek]   = useState(1);
+  const [daysSinceInstall, setDays]     = useState(0);
+  const [weeklyData, setWeeklyData]     = useState<{ date: string; totalMs: number }[]>([]);
+  const [chartWeekOffset, setOffset]    = useState(0);
+  const [refreshing, setRefreshing]     = useState(false);
+  const [showSuggestions, setShowSugg]  = useState(openSuggestion);
+
+  const today = useMemo(() => todayString(), []);
 
   const loadData = useCallback(async () => {
-    const [today, yesterday, streakData, completions, week, weekData, lvl, installDate] = await Promise.all([
-      UsageStats.getTodayUsage().catch(() => []),
-      UsageStats.getYesterdayUsage().catch(() => []),
+    const [todayArr, streakData, completions, week, weekData, installDate] = await Promise.all([
+      UsageStats.getTodayUsage().catch(() => [] as AppUsage[]),
       getStreak(),
-      getActivityCompletionsForDate(todayString()),
+      getActivityCompletionsForDate(today),
       MonitorService.getCurrentWeek(),
       getWeeklyUsageTotals(0),
-      MonitorService.getIntensity(),
       MonitorService.getInstallDate(),
     ]);
 
-    setTodayUsage(today);
-    setYesterdayUsage(yesterday);
+    setTodayUsage(todayArr);
     setStreak(streakData);
-    setCompletedToday(completions.map((c) => c.activityId));
+    setCompleted(completions.map((c) => c.activityId));
     setCurrentWeek(week);
-    setIntensity(lvl);
-    setDaysSinceInstall(
-      installDate ? Math.floor((Date.now() - installDate) / 86_400_000) : 0
-    );
+    setDays(installDate ? Math.floor((Date.now() - installDate) / 86_400_000) : 0);
     setWeeklyData(weekData);
-    setChartWeekOffset(0);
-    setSelectedChartDay(null);
+    setOffset(0);
 
     await Promise.all(
-      today.map((u) =>
-        upsertUsageSnapshot({
-          date: todayString(),
-          packageName: u.packageName,
-          appName: u.appName,
-          totalTimeMs: u.totalTimeMs,
-        })
+      todayArr.map((u) =>
+        upsertUsageSnapshot({ date: today, packageName: u.packageName, appName: u.appName, totalTimeMs: u.totalTimeMs })
       )
     );
-  }, []);
+  }, [today]);
 
-  useFocusEffect(
-    useCallback(() => {
-      loadData();
-      refreshTheme();
-    }, [loadData, refreshTheme])
-  );
+  useFocusEffect(useCallback(() => { loadData(); refreshTheme(); }, [loadData, refreshTheme]));
 
   useEffect(() => {
-    const sub = AppState.addEventListener('change', (state: AppStateStatus) => {
-      if (state === 'active') loadData();
-    });
+    const sub = AppState.addEventListener('change', (s: AppStateStatus) => { if (s === 'active') loadData(); });
     return () => sub.remove();
   }, [loadData]);
 
   const handleChartWeekChange = useCallback(async (newOffset: number) => {
     if (newOffset > 0) return;
-    setChartWeekOffset(newOffset);
-    setSelectedChartDay(null);
+    setOffset(newOffset);
     const data = await getWeeklyUsageTotals(newOffset);
     setWeeklyData(data);
   }, []);
 
-  const onRefresh = useCallback(async () => {
-    setRefreshing(true);
-    await loadData();
-    setRefreshing(false);
-  }, [loadData]);
-
   const handleActivityDone = async (activity: Activity) => {
     if (completedToday.includes(activity.id)) {
-      Alert.alert(
-        'Undo completion?',
-        `Unmark "${activity.label}" as done?`,
-        [
-          { text: 'Keep it', style: 'cancel' },
-          {
-            text: 'Undo',
-            style: 'destructive',
-            onPress: async () => {
-              await removeActivityCompletion(activity.id);
-              setCompletedToday((prev) => prev.filter((id) => id !== activity.id));
-            },
+      Alert.alert('Undo completion?', `Unmark "${activity.label}" as done?`, [
+        { text: 'Keep it', style: 'cancel' },
+        {
+          text: 'Undo',
+          style: 'destructive',
+          onPress: async () => {
+            await removeActivityCompletion(activity.id);
+            setCompleted((prev) => prev.filter((id) => id !== activity.id));
           },
-        ]
-      );
+        },
+      ]);
       return;
     }
     await logActivityCompletion(activity.id, activity.label);
     const newStreak = await recordStreakDay();
-    setCompletedToday((prev) => [...prev, activity.id]);
+    setCompleted((prev) => [...prev, activity.id]);
     setStreak(newStreak);
-    Alert.alert('Nice work! 🎉', `You completed: ${activity.label}`);
+    Alert.alert('Nice work!', `You completed: ${activity.label}`);
   };
 
-  const todayTotal = todayUsage.reduce((sum, u) => sum + u.totalTimeMs, 0);
-  const yesterdayTotal = yesterdayUsage.reduce((sum, u) => sum + u.totalTimeMs, 0);
-  const delta = todayTotal - yesterdayTotal;
+  const preset = INTENSITY_PRESETS[intensity];
+  const phase = getBannerPhase(daysSinceInstall, currentWeek, preset);
+  const badgeText = (() => {
+    if (phase === 'observer') return `DAY ${daysSinceInstall + 1} OF ${preset.sampleDays} · OBSERVING`;
+    const labels: Record<typeof phase, string> = { observer: 'OBSERVING', active: 'ACTIVE', progress: 'BUILDING', maintenance: 'MAINTAINED' };
+    return `WEEK ${currentWeek} · ${labels[phase]}`;
+  })();
+
+  const todayTotal = todayUsage.reduce((s, u) => s + u.totalTimeMs, 0);
+  const todayMin = msToMin(todayTotal);
+
+  // Greeting: count good days this week (days with data and under target)
+  const targetMin = phase !== 'observer' ? preset.baselineCapMinutes : 0;
+  const goodDaysThisWeek = weeklyData.filter(
+    (d) => d.date <= today && d.date !== today && d.totalMs > 0 && msToMin(d.totalMs) <= targetMin
+  ).length;
+  const greetingText = getGreeting({
+    phase,
+    intensity,
+    todayMin,
+    targetMin,
+    goodDaysThisWeek,
+    streak: streak.currentStreak,
+    hour: new Date().getHours(),
+  });
+  const greetingSegments = parseGreeting(greetingText);
+
+  // Per-app daily target proxy: baseline cap divided across monitored apps
+  const perAppTargetMin = todayUsage.length > 0
+    ? Math.round(preset.baselineCapMinutes / todayUsage.length)
+    : 0;
+
+
+  const totalHours = Math.floor(todayMin / 60);
+  const totalMins  = todayMin % 60;
+  const totalDisplay = totalHours > 0 ? `${totalHours}:${String(totalMins).padStart(2,'0')}` : String(todayMin);
+  const totalUnit    = totalHours > 0 ? 'h' : 'min';
 
   return (
-    <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor={colors.bg} />
-
+    <SgScreen>
       <ScrollView
-        contentContainerStyle={styles.scroll}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />}
+        style={{ flex: 1 }}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={async () => { setRefreshing(true); await loadData(); setRefreshing(false); }}
+            tintColor={accent}
+          />
+        }
       >
-        {/* Header */}
-        <View style={styles.header}>
-          <Text style={styles.headerTitle}>ScrollGuard</Text>
-          <View style={styles.headerRight}>
-            <View style={styles.weekBadge}>
-              <Text style={styles.weekText}>Week {currentWeek}</Text>
+        {/* ── Header ── */}
+        <View style={headerStyles.row}>
+          <SgMark size={34} accent={accent} />
+          <View style={{ flex: 1 }}>
+            <Text style={headerStyles.wordmark}>ScrollGuard</Text>
+            <View style={[headerStyles.badge, { backgroundColor: accentSoft }]}>
+              <View style={[headerStyles.badgeDot, { backgroundColor: accent }]} />
+              <Text style={[headerStyles.badgeText, { color: accent }]}>{badgeText}</Text>
             </View>
-            <TouchableOpacity
-              onPress={() => navigation.navigate('Settings')}
-              style={styles.gearBtn}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.gearIcon}>⚙</Text>
-            </TouchableOpacity>
           </View>
+          <TouchableOpacity
+            onPress={() => navigation.navigate('Settings')}
+            style={headerStyles.gear}
+            activeOpacity={0.7}
+          >
+            <Text style={headerStyles.gearIcon}>⚙</Text>
+          </TouchableOpacity>
         </View>
 
-        {/* Phase-aware personalised banner */}
-        {(() => {
-          const preset = INTENSITY_PRESETS[intensity];
-          const phase = getBannerPhase(daysSinceInstall, currentWeek, preset);
-          const msg = INTENSITY_MESSAGES[intensity][phase];
-          const borderColor = {
-            observer:    colors.accent,
-            active:      colors.success,
-            progress:    colors.warning,
-            maintenance: colors.success,
-          }[phase];
-          return (
-            <View style={[styles.phaseBanner, { borderLeftColor: borderColor }]}>
-              <Text style={styles.phaseBannerTitle}>{msg.title(preset, currentWeek)}</Text>
-              <Text style={styles.phaseBannerBody}>{msg.body(preset, currentWeek)}</Text>
-            </View>
-          );
-        })()}
+        {/* ── Greeting ── */}
+        <View style={greetStyles.section}>
+          <Text style={greetStyles.date}>
+            {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' }).toUpperCase()}
+          </Text>
+          <Text
+            style={greetStyles.headline}
+            adjustsFontSizeToFit
+            numberOfLines={2}
+            minimumFontScale={0.8}
+          >
+            {greetingSegments.map((seg, i) =>
+              seg.italic ? (
+                <Text key={i} style={[greetStyles.italic, { color: accent }]}>{seg.text}</Text>
+              ) : (
+                <Text key={i}>{seg.text}</Text>
+              )
+            )}
+          </Text>
+        </View>
 
-        {/* Weekly bar chart */}
-        <View style={styles.chartCard}>
-          <View style={styles.chartNav}>
-            <View style={styles.chartNavLeft}>
-              {chartWeekOffset < 0 && (
-                <TouchableOpacity
-                  onPress={() => handleChartWeekChange(0)}
-                  style={styles.todayBtn}
-                  activeOpacity={0.8}
-                >
-                  <Text style={styles.todayBtnText}>Current week</Text>
-                </TouchableOpacity>
-              )}
-            </View>
-            <View style={styles.chartNavRight}>
-              <TouchableOpacity
-                onPress={() => handleChartWeekChange(chartWeekOffset - 1)}
-                style={styles.navBtn}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.navArrow}>‹</Text>
-              </TouchableOpacity>
-              <Text style={styles.chartRangeLabel}>{weekRangeLabel(weeklyData)}</Text>
-              <TouchableOpacity
-                onPress={() => handleChartWeekChange(chartWeekOffset + 1)}
-                style={styles.navBtn}
-                disabled={chartWeekOffset >= 0}
-                activeOpacity={chartWeekOffset < 0 ? 0.7 : 0.3}
-              >
-                <Text style={[styles.navArrow, chartWeekOffset >= 0 && styles.navArrowDisabled]}>›</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-          <WeeklyBarChart
+        {/* ── Chart ── */}
+        <View style={{ paddingHorizontal: 22, paddingTop: 14 }}>
+          <WeekChart
             data={weeklyData}
-            selectedDay={selectedChartDay}
-            onDayPress={(i) => setSelectedChartDay(i)}
+            accent={accent}
+            today={today}
+            onPrev={() => handleChartWeekChange(chartWeekOffset - 1)}
+            onNext={() => handleChartWeekChange(chartWeekOffset + 1)}
+            canGoNext={chartWeekOffset < 0}
+            rangeLabel={weekRangeLabel(weeklyData)}
+            targetMin={targetMin}
           />
         </View>
 
-        {/* Streak + today's total side-by-side */}
-        <View style={styles.twinRow}>
-          <View style={[styles.twinCard, { marginRight: spacing.sm / 2 }]}>
-            <Text style={styles.twinValue}>{streak.currentStreak}</Text>
-            <Text style={styles.twinLabel}>day streak 🔥</Text>
-            {streak.longestStreak > 0 && (
-              <Text style={styles.twinSub}>best: {streak.longestStreak}</Text>
-            )}
-          </View>
-          <View style={[styles.twinCard, { marginLeft: spacing.sm / 2 }]}>
-            <Text style={styles.twinValue}>{formatMinutes(msToMinutes(todayTotal))}</Text>
-            <Text style={styles.twinLabel}>today's total</Text>
-            {yesterdayTotal > 0 && (
-              <Text style={[styles.twinSub, delta > 0 ? styles.deltaUp : styles.deltaDown]}>
-                {delta > 0 ? '↑' : '↓'} {formatMinutes(Math.abs(msToMinutes(delta)))} vs yday
-              </Text>
+        {/* ── Stat tiles ── */}
+        <View style={statRowStyles.row}>
+          <StatTile
+            label="STREAK"
+            value={String(streak.currentStreak)}
+            hint={streak.longestStreak > 0 ? `best: ${streak.longestStreak} days` : 'under-target days'}
+          />
+          <StatTile
+            label="TODAY"
+            value={totalDisplay}
+            unit={totalUnit}
+            hint={`across ${todayUsage.length} app${todayUsage.length !== 1 ? 's' : ''}`}
+          />
+        </View>
+
+        {/* ── App breakdown ── */}
+        <View style={secWrapStyles.wrap}>
+          <SectionHeader
+            title="Today's breakdown"
+            count={`${todayUsage.length} OF ${todayUsage.length} APPS`}
+          />
+          <View style={[secWrapStyles.card, { overflow: 'hidden' }]}>
+            {todayUsage.length === 0 ? (
+              <Text style={secWrapStyles.empty}>No usage data yet. Pull to refresh.</Text>
+            ) : (
+              todayUsage.map((u, i) => (
+                <AppBreakdownRow
+                  key={u.packageName}
+                  name={u.appName}
+                  mins={msToMin(u.totalTimeMs)}
+                  targetMin={perAppTargetMin}
+                  isLast={i === todayUsage.length - 1}
+                  accent={accent}
+                />
+              ))
             )}
           </View>
         </View>
 
-        {/* Per-app breakdown */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Today's breakdown</Text>
-          {todayUsage.length === 0 ? (
-            <Text style={styles.emptyMsg}>No usage data yet. Pull to refresh.</Text>
-          ) : (
-            todayUsage.map((u) => {
-              const yestEntry = yesterdayUsage.find((y) => y.packageName === u.packageName);
-              const yestMin = yestEntry ? msToMinutes(yestEntry.totalTimeMs) : null;
-              return (
-                <View key={u.packageName} style={styles.appRow}>
-                  <View style={styles.appInfo}>
-                    <Text style={styles.appName}>{u.appName}</Text>
-                    <Text style={styles.appTime}>{formatMinutes(msToMinutes(u.totalTimeMs))}</Text>
-                  </View>
-                  {yestMin !== null && (
-                    <Text style={styles.appYest}>yesterday: {formatMinutes(yestMin)}</Text>
-                  )}
-                </View>
-              );
-            })
+        {/* ── Suggestions ── */}
+        <View style={secWrapStyles.wrap}>
+          <TouchableOpacity onPress={() => setShowSugg((v) => !v)}>
+            <SectionHeader
+              title="Instead of scrolling"
+              count={`${suggestedActivities.length} IDEAS`}
+            />
+          </TouchableOpacity>
+          {showSuggestions && (
+            <View style={[secWrapStyles.card, { overflow: 'hidden' }]}>
+              {suggestedActivities.map((a, i) => (
+                <SuggestionCard
+                  key={a.id}
+                  activity={a}
+                  done={completedToday.includes(a.id)}
+                  onPress={() => handleActivityDone(a)}
+                  accent={accent}
+                  accentSoft={accentSoft}
+                  accentLine={accentLine}
+                  isLast={i === suggestedActivities.length - 1}
+                />
+              ))}
+            </View>
           )}
         </View>
 
-        {/* Activity suggestions */}
-        <View style={styles.section}>
-          <TouchableOpacity
-            style={styles.sectionHeader}
-            onPress={() => setShowSuggestions((v) => !v)}
-          >
-            <Text style={styles.sectionTitle}>Suggestions</Text>
-            <Text style={styles.sectionToggle}>{showSuggestions ? '▲' : '▼'}</Text>
-          </TouchableOpacity>
-
-          {showSuggestions &&
-            suggestedActivities.map((activity) => {
-              const done = completedToday.includes(activity.id);
-              return (
-                <TouchableOpacity
-                  key={activity.id}
-                  style={[styles.activityCard, done && styles.activityDone]}
-                  onPress={() => handleActivityDone(activity)}
-                  activeOpacity={0.75}
-                >
-                  <View style={styles.activityInfo}>
-                    <Text style={[styles.activityLabel, done && styles.activityLabelDone]}>
-                      {activity.label}
-                    </Text>
-                    <Text style={styles.activityMeta}>
-                      ~{activity.durationMin} min · {activity.category}
-                    </Text>
-                  </View>
-                  <View style={[styles.doneBtn, done && styles.doneBtnDone]}>
-                    <Text style={styles.doneBtnText}>{done ? '✓' : 'I did it'}</Text>
-                  </View>
-                </TouchableOpacity>
-              );
-            })}
+        <View style={{ height: 18 }} />
+        <View style={footerStyles.row}>
+          <SgMark size={18} accent={accent} />
+          <Text style={footerStyles.text}>SCROLLGUARD · ON-DEVICE</Text>
         </View>
-
-        <Text style={styles.privacyFooter}>
-          All data stays on your device. Nothing is sent anywhere.
-        </Text>
+        <View style={{ height: 28 }} />
       </ScrollView>
-    </SafeAreaView>
+    </SgScreen>
   );
 }
+
+const headerStyles = StyleSheet.create({
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingHorizontal: 22,
+    paddingTop: 14,
+    paddingBottom: 8,
+  },
+  wordmark: { fontFamily: SgFonts.uiSemiBold, fontSize: 19, color: SG.fg, letterSpacing: -0.5, lineHeight: 22 },
+  badge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    alignSelf: 'flex-start',
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 999,
+    marginTop: 4,
+  },
+  badgeDot: { width: 5, height: 5, borderRadius: 999 },
+  badgeText: { fontFamily: SgFonts.mono, fontSize: 10, letterSpacing: 0.5 },
+  gear: {
+    width: 38, height: 38, borderRadius: 999,
+    borderWidth: 1, borderColor: SG.lineSoft,
+    justifyContent: 'center', alignItems: 'center',
+    flexShrink: 0,
+  },
+  gearIcon: { fontSize: 17, color: SG.fg2 },
+});
+
+const greetStyles = StyleSheet.create({
+  section: { paddingHorizontal: 22, paddingTop: 14, paddingBottom: 8 },
+  date: { fontFamily: SgFonts.mono, fontSize: 11, color: SG.fg3, letterSpacing: 0.5 },
+  headline: {
+    fontFamily: SgFonts.display,
+    fontSize: 36,
+    color: SG.fg,
+    letterSpacing: -0.7,
+    lineHeight: 42,
+    marginTop: 8,
+  },
+  italic: { fontFamily: SgFonts.displayItalic, fontSize: 36, lineHeight: 42 },
+});
+
+
+const statRowStyles = StyleSheet.create({
+  row: { flexDirection: 'row', paddingHorizontal: 22, paddingTop: 14, gap: 12 },
+});
+
+const secWrapStyles = StyleSheet.create({
+  wrap: { paddingHorizontal: 22, paddingTop: 20 },
+  card: {
+    backgroundColor: SG.surface,
+    borderWidth: 1,
+    borderColor: SG.lineSoft,
+    borderRadius: SG.rLg,
+  },
+  empty: {
+    fontFamily: SgFonts.ui,
+    fontSize: 14,
+    color: SG.fg3,
+    padding: 16,
+    textAlign: 'center',
+  },
+});
+
+const footerStyles = StyleSheet.create({
+  row: { alignItems: 'center', gap: 8, justifyContent: 'center', flexDirection: 'row' },
+  text: { fontFamily: SgFonts.mono, fontSize: 10.5, color: SG.fg4, letterSpacing: 0.8 },
+});

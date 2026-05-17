@@ -1,12 +1,10 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
-  SafeAreaView,
   ScrollView,
-  StatusBar,
   ActivityIndicator,
   Alert,
 } from 'react-native';
@@ -17,71 +15,151 @@ import { MonitorService } from '../../modules/MonitorService';
 import { UsageStats } from '../../modules/UsageStats';
 import { INTENSITY_PRESETS, IntensityLevel } from '../../config/intensityPresets';
 import { seedTestData, clearAllUsageData } from '../../storage/db';
-import { useTheme, spacing, font, AppColors } from '../../ThemeContext';
+import { useTheme } from '../../ThemeContext';
+import { SG, SgFonts, ACCENT } from '../../theme';
+import { SgScreen, SgMark } from '../../components/sg';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Settings'>;
 
-interface SettingsRow {
-  key: string;
+function SettingRow({
+  icon,
+  iconBg,
+  label,
+  sub,
+  valueBadge,
+  onPress,
+  loading,
+  labelColor,
+}: {
   icon: string;
+  iconBg: string;
   label: string;
-  sublabel: string;
+  sub: string;
+  valueBadge?: string;
   onPress: () => void;
   loading?: boolean;
+  labelColor?: string;
+}) {
+  return (
+    <TouchableOpacity
+      style={rowStyles.row}
+      onPress={onPress}
+      disabled={loading}
+      activeOpacity={0.7}
+    >
+      <View style={[rowStyles.iconBox, { backgroundColor: iconBg }]}>
+        {loading ? (
+          <ActivityIndicator color={SG.fg2} size="small" />
+        ) : (
+          <Text style={rowStyles.iconText}>{icon}</Text>
+        )}
+      </View>
+      <View style={{ flex: 1 }}>
+        <Text style={[rowStyles.label, labelColor ? { color: labelColor } : {}]}>{label}</Text>
+        <Text style={rowStyles.sub}>{sub}</Text>
+      </View>
+      <View style={rowStyles.right}>
+        {valueBadge ? (
+          <Text style={rowStyles.badge}>{valueBadge}</Text>
+        ) : null}
+        <Text style={rowStyles.chevron}>›</Text>
+      </View>
+    </TouchableOpacity>
+  );
 }
 
-function makeStyles(c: AppColors) {
-  return StyleSheet.create({
-    container: { flex: 1, backgroundColor: c.bg },
-    header: { paddingHorizontal: spacing.lg, paddingTop: spacing.lg, paddingBottom: spacing.lg },
-    backBtn: { marginBottom: spacing.md },
-    backText: { color: c.accent, fontSize: font.md, fontWeight: '600' },
-    title: { fontSize: font.xxl, fontWeight: '700', color: c.textPrimary },
-    scroll: { paddingBottom: spacing.xxl },
-    list: {
-      marginHorizontal: spacing.lg,
-      backgroundColor: c.surface,
-      borderRadius: 16,
-      overflow: 'hidden',
-    },
-    row: { flexDirection: 'row', alignItems: 'center', padding: spacing.md, gap: spacing.md },
-    rowBorder: { borderBottomWidth: 1, borderBottomColor: c.border },
-    rowIcon: {
-      width: 40, height: 40, borderRadius: 10,
-      backgroundColor: c.bg, justifyContent: 'center', alignItems: 'center',
-    },
-    rowIconText: { fontSize: 20 },
-    rowBody: { flex: 1 },
-    rowLabel: { fontSize: font.md, fontWeight: '600', color: c.textPrimary },
-    rowSublabel: { fontSize: font.xs, color: c.textSecondary, marginTop: 2, lineHeight: 16 },
-    chevron: { fontSize: 22, color: c.textSecondary, fontWeight: '300' },
+const rowStyles = StyleSheet.create({
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    gap: 14,
+  },
+  iconBox: {
+    width: 34,
+    height: 34,
+    borderRadius: SG.rSm,
+    justifyContent: 'center',
+    alignItems: 'center',
+    flexShrink: 0,
+  },
+  iconText: { fontSize: 17 },
+  label: {
+    fontFamily: SgFonts.uiMedium,
+    fontSize: 14.5,
+    color: SG.fg,
+    marginBottom: 1,
+  },
+  sub: {
+    fontFamily: SgFonts.ui,
+    fontSize: 12,
+    color: SG.fg3,
+    lineHeight: 17,
+  },
+  right: { flexDirection: 'row', alignItems: 'center', gap: 6, flexShrink: 0 },
+  badge: {
+    fontFamily: SgFonts.mono,
+    fontSize: 10,
+    color: SG.fg3,
+    letterSpacing: 0.5,
+    backgroundColor: SG.surface2,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  chevron: { fontSize: 20, color: SG.fg4, fontWeight: '300' },
+});
 
-    devSectionLabel: {
-      fontSize: font.xs,
-      fontWeight: '700',
-      color: c.warning,
-      textTransform: 'uppercase',
-      letterSpacing: 0.8,
-      marginHorizontal: spacing.lg,
-      marginTop: spacing.xl,
-      marginBottom: spacing.sm,
-    },
-    devList: {
-      marginHorizontal: spacing.lg,
-      backgroundColor: c.surface,
-      borderRadius: 16,
-      overflow: 'hidden',
-      borderWidth: 1,
-      borderColor: c.warning + '44',
-    },
-    devRowLabel: { fontSize: font.md, fontWeight: '600', color: c.warning },
-    devRowLabelDestructive: { fontSize: font.md, fontWeight: '600', color: c.danger },
-  });
+function SgCardSection({
+  eyebrow,
+  children,
+  borderColor,
+}: {
+  eyebrow: string;
+  children: React.ReactNode;
+  borderColor?: string;
+}) {
+  return (
+    <View style={sectionStyles.wrap}>
+      <Text style={sectionStyles.eyebrow}>{eyebrow}</Text>
+      <View
+        style={[
+          sectionStyles.card,
+          borderColor ? { borderColor } : {},
+        ]}
+      >
+        {children}
+      </View>
+    </View>
+  );
+}
+
+const sectionStyles = StyleSheet.create({
+  wrap: { marginBottom: 20 },
+  eyebrow: {
+    fontFamily: SgFonts.mono,
+    fontSize: 10,
+    color: SG.fg3,
+    letterSpacing: 1.2,
+    marginBottom: 10,
+    textTransform: 'uppercase',
+  },
+  card: {
+    backgroundColor: SG.surface,
+    borderWidth: 1,
+    borderColor: SG.lineSoft,
+    borderRadius: SG.rLg,
+    overflow: 'hidden',
+  },
+});
+
+function Divider() {
+  return <View style={{ height: 1, backgroundColor: SG.lineSoft, marginLeft: 64 }} />;
 }
 
 export default function SettingsScreen({ navigation }: Props) {
-  const { colors, refreshTheme } = useTheme();
-  const styles = useMemo(() => makeStyles(colors), [colors]);
+  const { refreshTheme } = useTheme();
   const [exporting, setExporting] = useState(false);
   const [seeding, setSeeding] = useState(false);
   const [clearing, setClearing] = useState(false);
@@ -172,115 +250,117 @@ export default function SettingsScreen({ navigation }: Props) {
 
   const intensityPreset = intensity ? INTENSITY_PRESETS[intensity] : null;
 
-  const rows: SettingsRow[] = [
-    {
-      key: 'monitored_apps',
-      icon: '📱',
-      label: 'Monitored Apps',
-      sublabel: 'Choose which apps ScrollGuard tracks',
-      onPress: () => navigation.navigate('MonitoredApps'),
-    },
-    {
-      key: 'intensity',
-      icon: '🎯',
-      label: 'Improvement Pace',
-      sublabel: intensityPreset ? `${intensityPreset.label} — ${intensityPreset.tagline}` : 'Loading…',
-      onPress: () => navigation.navigate('IntensitySettings'),
-    },
-    {
-      key: 'export',
-      icon: '↑',
-      label: 'Export my data',
-      sublabel: 'Share your usage history as a JSON file',
-      onPress: handleExport,
-      loading: exporting,
-    },
-  ];
-
-  const devRows = [
-    {
-      key: 'seed',
-      icon: '🧪',
-      label: `Seed ${intensityPreset?.sampleDays ?? '…'} days of test data`,
-      sublabel: `Generates synthetic usage based on the ${intensityPreset?.label ?? '…'} profile`,
-      onPress: handleSeed,
-      loading: seeding,
-      labelStyle: styles.devRowLabel,
-    },
-    {
-      key: 'clear',
-      icon: '🗑',
-      label: 'Clear all usage data',
-      sublabel: 'Wipes usage_snapshots — dashboard goes empty',
-      onPress: handleClearData,
-      loading: clearing,
-      labelStyle: styles.devRowLabelDestructive,
-    },
-  ];
-
   return (
-    <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor={colors.bg} />
+    <SgScreen>
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={styles.scroll}
+        showsVerticalScrollIndicator={false}
+      >
+        <Text style={styles.headline}>Settings</Text>
 
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
-          <Text style={styles.backText}>← Back</Text>
-        </TouchableOpacity>
-        <Text style={styles.title}>Settings</Text>
-      </View>
+        {/* HOW IT WATCHES */}
+        <SgCardSection eyebrow="HOW IT WATCHES">
+          <SettingRow
+            icon="📱"
+            iconBg={SG.surface2}
+            label="Monitored apps"
+            sub="Choose which apps ScrollGuard tracks"
+            onPress={() => navigation.navigate('MonitoredApps')}
+          />
+          <Divider />
+          <SettingRow
+            icon="🎯"
+            iconBg={SG.surface2}
+            label="Improvement pace"
+            sub={intensityPreset ? intensityPreset.tagline : 'Loading…'}
+            valueBadge={intensity ? intensity.toUpperCase() : undefined}
+            onPress={() => navigation.navigate('IntensitySettings')}
+          />
+          <Divider />
+          <SettingRow
+            icon="💬"
+            iconBg={SG.surface2}
+            label="In-app nudges"
+            sub="Draw-over permission for gentle overlay cards"
+            onPress={() => {}}
+          />
+        </SgCardSection>
 
-      <ScrollView contentContainerStyle={styles.scroll}>
-        <View style={styles.list}>
-          {rows.map((row, index) => (
-            <TouchableOpacity
-              key={row.key}
-              style={[styles.row, index < rows.length - 1 && styles.rowBorder]}
-              onPress={row.onPress}
-              disabled={row.loading}
-              activeOpacity={0.7}
-            >
-              <View style={styles.rowIcon}>
-                {row.loading ? (
-                  <ActivityIndicator color={colors.accent} size="small" />
-                ) : (
-                  <Text style={styles.rowIconText}>{row.icon}</Text>
-                )}
-              </View>
-              <View style={styles.rowBody}>
-                <Text style={styles.rowLabel}>{row.label}</Text>
-                <Text style={styles.rowSublabel}>{row.sublabel}</Text>
-              </View>
-              <Text style={styles.chevron}>›</Text>
-            </TouchableOpacity>
-          ))}
-        </View>
+        {/* YOUR DATA */}
+        <SgCardSection eyebrow="YOUR DATA">
+          <SettingRow
+            icon="↑"
+            iconBg={SG.surface2}
+            label="Export my data"
+            sub="Share your usage history as a JSON file"
+            onPress={handleExport}
+            loading={exporting}
+          />
+          <Divider />
+          <SettingRow
+            icon="🔒"
+            iconBg={SG.surface2}
+            label="Privacy"
+            sub="All data stays on your device. Nothing is sent anywhere."
+            onPress={() => {}}
+          />
+        </SgCardSection>
 
-        <Text style={styles.devSectionLabel}>Developer & Testing</Text>
+        {/* DEVELOPER & TESTING */}
+        <SgCardSection eyebrow="DEVELOPER & TESTING" borderColor={`${SG.amber}55`}>
+          <SettingRow
+            icon="🧪"
+            iconBg={`${SG.amber}18`}
+            label={`Seed ${intensityPreset?.sampleDays ?? '…'} days of test data`}
+            sub={`Generates synthetic usage based on the ${intensityPreset?.label ?? '…'} profile`}
+            onPress={handleSeed}
+            loading={seeding}
+            labelColor={SG.amber}
+          />
+          <Divider />
+          <SettingRow
+            icon="🗑"
+            iconBg={`${SG.strict}18`}
+            label="Clear all usage data"
+            sub="Wipes usage_snapshots — dashboard goes empty"
+            onPress={handleClearData}
+            loading={clearing}
+            labelColor={SG.strict}
+          />
+        </SgCardSection>
 
-        <View style={styles.devList}>
-          {devRows.map((row, index) => (
-            <TouchableOpacity
-              key={row.key}
-              style={[styles.row, index < devRows.length - 1 && styles.rowBorder]}
-              onPress={row.onPress}
-              disabled={row.loading}
-              activeOpacity={0.7}
-            >
-              <View style={styles.rowIcon}>
-                {row.loading ? (
-                  <ActivityIndicator color={colors.warning} size="small" />
-                ) : (
-                  <Text style={styles.rowIconText}>{row.icon}</Text>
-                )}
-              </View>
-              <View style={styles.rowBody}>
-                <Text style={row.labelStyle}>{row.label}</Text>
-                <Text style={styles.rowSublabel}>{row.sublabel}</Text>
-              </View>
-            </TouchableOpacity>
-          ))}
+        {/* Footer */}
+        <View style={styles.footer}>
+          <SgMark size={18} accent={intensity ? ACCENT[intensity].accent : SG.balanced} outline={SG.fg} />
+          <Text style={styles.footerText}>SCROLLGUARD · v1.0.0 · ON-DEVICE</Text>
         </View>
       </ScrollView>
-    </SafeAreaView>
+    </SgScreen>
   );
 }
+
+const styles = StyleSheet.create({
+  scroll: { paddingHorizontal: 24, paddingTop: 28, paddingBottom: 40 },
+  headline: {
+    fontFamily: SgFonts.display,
+    fontSize: 42,
+    color: SG.fg,
+    letterSpacing: -0.8,
+    lineHeight: 48,
+    marginBottom: 28,
+  },
+  footer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    marginTop: 8,
+  },
+  footerText: {
+    fontFamily: SgFonts.mono,
+    fontSize: 10,
+    color: SG.fg4,
+    letterSpacing: 0.8,
+  },
+});

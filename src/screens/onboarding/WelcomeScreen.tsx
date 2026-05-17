@@ -1,115 +1,164 @@
 import React from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  SafeAreaView,
-  StatusBar,
-} from 'react-native';
+import { View, Text, StyleSheet, ScrollView } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../navigation/AppNavigator';
-import { colors, spacing, font } from '../../theme';
+import { SG, SgFonts } from '../../theme';
+import { useTheme } from '../../ThemeContext';
+import {
+  SgScreen,
+  SgMark,
+  SgButton,
+  PrivacyFooter,
+} from '../../components/sg';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Welcome'>;
 
+const BEATS = [
+  { dot: SG.gentle,   tag: '01', title: 'Observes silently', sub: 'For a few days. No nudges.' },
+  { dot: SG.balanced, tag: '02', title: 'Nudges gently',     sub: 'A tap on the shoulder — never a block.' },
+  { dot: SG.strict,   tag: '03', title: 'Redirects attention', sub: 'Toward offline things you chose.' },
+];
+
 export default function WelcomeScreen({ navigation }: Props) {
+  const { accent } = useTheme();
+
   return (
-    <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor={colors.bg} />
+    <SgScreen>
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={styles.scroll}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* Brand */}
+        <View style={styles.brand}>
+          <SgMark size={34} accent={accent} />
+          <Text style={styles.wordmark}>ScrollGuard</Text>
+        </View>
 
-      <View style={styles.hero}>
-        <Text style={styles.emoji}>🛡️</Text>
-        <Text style={styles.title}>ScrollGuard</Text>
-        <Text style={styles.tagline}>
-          Not a blocker.{'\n'}A companion.
+        {/* Hero */}
+        <View style={styles.hero}>
+          <Text style={styles.eyebrow}>A QUIET COMPANION FOR YOUR ATTENTION</Text>
+          <Text style={styles.headline}>
+            {'Not a blocker.\n'}
+            <Text style={[styles.headlineItalic, { color: SG.fg2 }]}>A companion.</Text>
+          </Text>
+        </View>
+
+        {/* Body copy */}
+        <Text style={styles.body}>
+          Most apps punish you for scrolling. ScrollGuard earns your trust first — watching quietly for a few days, then nudging gently, then helping you redirect attention to things that actually matter.
         </Text>
-      </View>
-
-      <View style={styles.body}>
-        <Text style={styles.bodyText}>
-          Most apps punish you for scrolling.{'\n\n'}
-          ScrollGuard earns your trust first — watching silently for a week,
-          then nudging gently, then helping you redirect your attention to
-          things that actually matter.{'\n\n'}
+        <Text style={[styles.body, { color: SG.fg3, marginTop: 14 }]}>
           No hard stops. No guilt trips. Just honest progress.
         </Text>
-      </View>
 
-      <View style={styles.footer}>
-        <TouchableOpacity
-          style={styles.primaryBtn}
+        {/* Three-beat preview */}
+        <View style={styles.beats}>
+          {BEATS.map((row) => (
+            <View key={row.tag} style={styles.beatRow}>
+              <View style={[styles.beatDot, { backgroundColor: row.dot }]} />
+              <Text style={styles.beatTag}>{row.tag}</Text>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.beatTitle}>{row.title}</Text>
+                <Text style={styles.beatSub}>{row.sub}</Text>
+              </View>
+            </View>
+          ))}
+        </View>
+
+        <View style={{ flex: 1, minHeight: 28 }} />
+
+        {/* CTA */}
+        <SgButton
           onPress={() => navigation.navigate('PermissionUsageStats')}
-          activeOpacity={0.85}
-        >
-          <Text style={styles.primaryBtnText}>Get started →</Text>
-        </TouchableOpacity>
-        <Text style={styles.privacyNote}>
-          Everything stays on your device. No account. No server.
-        </Text>
-      </View>
-    </SafeAreaView>
+          label="Get started →"
+        />
+
+        <View style={{ height: 16 }} />
+        <PrivacyFooter text="Everything stays on your device. No account. No server." />
+        <View style={{ height: 8 }} />
+      </ScrollView>
+    </SgScreen>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: colors.bg,
-    paddingHorizontal: spacing.lg,
+  scroll: {
+    flexGrow: 1,
+    padding: 26,
+    paddingTop: 32,
   },
-  hero: {
-    flex: 2,
-    justifyContent: 'center',
+  brand: {
+    flexDirection: 'row',
     alignItems: 'center',
+    gap: 12,
+    marginTop: 8,
   },
-  emoji: {
-    fontSize: 56,
-    marginBottom: spacing.md,
-  },
-  title: {
-    fontSize: font.xxl,
-    fontWeight: '700',
-    color: colors.textPrimary,
+  wordmark: {
+    fontFamily: SgFonts.uiSemiBold,
+    fontSize: 19,
+    color: SG.fg,
     letterSpacing: -0.5,
   },
-  tagline: {
-    fontSize: font.lg,
-    color: colors.textSecondary,
-    textAlign: 'center',
-    marginTop: spacing.sm,
-    lineHeight: 28,
+  hero: { marginTop: 48 },
+  eyebrow: {
+    fontFamily: SgFonts.mono,
+    fontSize: 10.5,
+    color: SG.fg3,
+    letterSpacing: 1.2,
+  },
+  headline: {
+    fontFamily: SgFonts.display,
+    fontSize: 50,
+    color: SG.fg,
+    letterSpacing: -1.2,
+    lineHeight: 52,
+    marginTop: 18,
+  },
+  headlineItalic: {
+    fontFamily: SgFonts.displayItalic,
+    fontSize: 50,
+    letterSpacing: -1.2,
+    lineHeight: 52,
   },
   body: {
-    flex: 3,
-    justifyContent: 'center',
+    fontFamily: SgFonts.ui,
+    fontSize: 14.5,
+    color: SG.fg2,
+    lineHeight: 22,
+    letterSpacing: -0.1,
+    marginTop: 28,
   },
-  bodyText: {
-    fontSize: font.md,
-    color: colors.textSecondary,
-    lineHeight: 26,
-    textAlign: 'left',
+  beats: {
+    marginTop: 28,
+    gap: 12,
   },
-  footer: {
-    flex: 1,
-    justifyContent: 'flex-end',
-    paddingBottom: spacing.xl,
-  },
-  primaryBtn: {
-    backgroundColor: colors.accent,
-    paddingVertical: spacing.md,
-    borderRadius: 12,
+  beatRow: {
+    flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: spacing.md,
+    gap: 12,
   },
-  primaryBtnText: {
-    color: '#fff',
-    fontSize: font.md,
-    fontWeight: '600',
+  beatDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 999,
+    flexShrink: 0,
   },
-  privacyNote: {
-    color: colors.textSecondary,
-    fontSize: font.xs,
-    textAlign: 'center',
+  beatTag: {
+    fontFamily: SgFonts.mono,
+    fontSize: 10.5,
+    color: SG.fg4,
+    width: 18,
+  },
+  beatTitle: {
+    fontFamily: SgFonts.uiMedium,
+    fontSize: 13.5,
+    color: SG.fg,
+  },
+  beatSub: {
+    fontFamily: SgFonts.ui,
+    fontSize: 12,
+    color: SG.fg3,
+    marginTop: 1,
   },
 });

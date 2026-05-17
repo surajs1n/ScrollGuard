@@ -1,58 +1,143 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
-  SafeAreaView,
-  StatusBar,
+  ScrollView,
   ActivityIndicator,
   Alert,
 } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../navigation/AppNavigator';
 import { MonitorService } from '../../modules/MonitorService';
-import { INTENSITY_PRESETS, INTENSITY_COLORS, DEFAULT_INTENSITY, IntensityLevel } from '../../config/intensityPresets';
-import { useTheme, spacing, font, AppColors } from '../../ThemeContext';
+import {
+  INTENSITY_PRESETS,
+  DEFAULT_INTENSITY,
+  IntensityLevel,
+} from '../../config/intensityPresets';
+import { SG, SgFonts } from '../../theme';
+import { useTheme } from '../../ThemeContext';
+import {
+  SgScreen,
+  SgButton,
+  BackLink,
+} from '../../components/sg';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'IntensitySettings'>;
 
 const LEVELS: IntensityLevel[] = ['gentle', 'balanced', 'strict'];
 
-function makeStyles(c: AppColors) {
-  return StyleSheet.create({
-    container: { flex: 1, backgroundColor: c.bg },
-    header: { paddingHorizontal: spacing.lg, paddingTop: spacing.lg, paddingBottom: spacing.md },
-    backBtn: { marginBottom: spacing.md },
-    backText: { color: c.accent, fontSize: font.md, fontWeight: '600' },
-    title: { fontSize: font.xl, fontWeight: '700', color: c.textPrimary, marginBottom: spacing.sm },
-    subtitle: { fontSize: font.sm, color: c.textSecondary, lineHeight: 20 },
-    loader: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-    cards: { flex: 1, paddingHorizontal: spacing.lg, gap: spacing.sm, paddingTop: spacing.md },
-    card: {
-      borderWidth: 1.5,
-      borderColor: c.border,
-      borderRadius: 16,
-      padding: spacing.md,
-      backgroundColor: c.surface,
-    },
-    cardHeader: { flexDirection: 'row', alignItems: 'baseline', gap: spacing.sm, marginBottom: spacing.sm },
-    cardLabel: { fontSize: font.lg, fontWeight: '700', color: c.textPrimary },
-    cardTagline: { fontSize: font.sm, color: c.textSecondary },
-    cardDesc: { fontSize: font.sm, color: c.textSecondary, lineHeight: 20, marginBottom: spacing.md },
-    statsRow: { flexDirection: 'row', gap: spacing.md },
-    stat: { alignItems: 'center' },
-    statValue: { fontSize: font.md, fontWeight: '700', color: c.textPrimary },
-    statLabel: { fontSize: font.xs, color: c.textSecondary, marginTop: 2 },
-    footer: { paddingHorizontal: spacing.lg, paddingBottom: spacing.xl },
-    saveBtn: { backgroundColor: c.accent, paddingVertical: spacing.md, borderRadius: 12, alignItems: 'center' },
-    saveBtnText: { color: '#fff', fontSize: font.md, fontWeight: '600' },
-  });
+const LEVEL_ACCENT: Record<IntensityLevel, { accent: string; soft: string; line: string }> = {
+  gentle:   { accent: SG.gentle,   soft: SG.gentleSoft,   line: SG.gentleLine },
+  balanced: { accent: SG.balanced, soft: SG.balancedSoft, line: SG.balancedLine },
+  strict:   { accent: SG.strict,   soft: SG.strictSoft,   line: SG.strictLine },
+};
+
+function PaceCard({
+  level,
+  selected,
+  onSelect,
+}: {
+  level: IntensityLevel;
+  selected: boolean;
+  onSelect: () => void;
+}) {
+  const preset = INTENSITY_PRESETS[level];
+  const { accent, soft, line } = LEVEL_ACCENT[level];
+
+  return (
+    <TouchableOpacity
+      onPress={onSelect}
+      activeOpacity={0.8}
+      style={[
+        cardStyles.card,
+        selected ? { backgroundColor: soft, borderColor: line } : {},
+      ]}
+    >
+      <View style={cardStyles.header}>
+        <View style={[cardStyles.dot, { backgroundColor: accent }]} />
+        <View style={{ flex: 1 }}>
+          <View style={cardStyles.titleRow}>
+            <Text style={[cardStyles.name, selected && { color: accent }]}>{preset.label}</Text>
+            <Text style={cardStyles.tag}>· {preset.tagline}</Text>
+          </View>
+        </View>
+        <View style={[cardStyles.radio, { borderColor: selected ? accent : SG.line }]}>
+          {selected && <View style={[cardStyles.radioFill, { backgroundColor: accent }]} />}
+        </View>
+      </View>
+
+      <Text style={cardStyles.desc}>{preset.description}</Text>
+
+      <View style={cardStyles.statsRow}>
+        {[
+          ['BASELINE', `${preset.sampleDays}d`],
+          ['WEEKLY CUT', `−${Math.round(preset.weeklyReductionPct * 100)}%`],
+          ['COOLDOWN',   `${preset.cooldownMinutes}m`],
+        ].map(([label, value]) => (
+          <View key={label} style={{ flex: 1 }}>
+            <Text style={cardStyles.statLabel}>{label}</Text>
+            <Text style={[cardStyles.statValue, selected && { color: SG.fg }]}>{value}</Text>
+          </View>
+        ))}
+      </View>
+    </TouchableOpacity>
+  );
 }
 
+const cardStyles = StyleSheet.create({
+  card: {
+    padding: 18,
+    backgroundColor: SG.surface,
+    borderWidth: 1,
+    borderColor: SG.lineSoft,
+    borderRadius: SG.rLg,
+  },
+  header: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  dot: { width: 7, height: 7, borderRadius: 999, flexShrink: 0 },
+  titleRow: { flexDirection: 'row', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' },
+  name: { fontFamily: SgFonts.uiSemiBold, fontSize: 18, color: SG.fg },
+  tag: { fontFamily: SgFonts.ui, fontSize: 12, color: SG.fg3 },
+  radio: {
+    width: 20, height: 20, borderRadius: 999,
+    borderWidth: 1.5,
+    justifyContent: 'center', alignItems: 'center',
+  },
+  radioFill: { width: 10, height: 10, borderRadius: 999 },
+  desc: {
+    fontFamily: SgFonts.ui,
+    fontSize: 13.5,
+    color: SG.fg2,
+    lineHeight: 20,
+    marginTop: 12,
+    marginBottom: 4,
+  },
+  statsRow: {
+    flexDirection: 'row',
+    marginTop: 16,
+    paddingTop: 14,
+    borderTopWidth: 1,
+    borderTopColor: SG.lineSoft,
+    gap: 8,
+  },
+  statLabel: {
+    fontFamily: SgFonts.mono,
+    fontSize: 9.5,
+    color: SG.fg3,
+    letterSpacing: 1,
+    marginBottom: 4,
+  },
+  statValue: {
+    fontFamily: SgFonts.display,
+    fontSize: 22,
+    color: SG.fg,
+    lineHeight: 26,
+  },
+});
+
 export default function IntensitySettingsScreen({ navigation }: Props) {
-  const { colors, refreshTheme } = useTheme();
-  const styles = useMemo(() => makeStyles(colors), [colors]);
+  const { refreshTheme } = useTheme();
   const [intensity, setIntensity] = useState<IntensityLevel>(DEFAULT_INTENSITY);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -78,71 +163,67 @@ export default function IntensitySettingsScreen({ navigation }: Props) {
   };
 
   return (
-    <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor={colors.bg} />
+    <SgScreen>
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={styles.scroll}
+        showsVerticalScrollIndicator={false}
+      >
+        <BackLink onPress={() => navigation.goBack()} />
 
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
-          <Text style={styles.backText}>← Back</Text>
-        </TouchableOpacity>
-        <Text style={styles.title}>Improvement Pace</Text>
-        <Text style={styles.subtitle}>
-          Controls how fast ScrollGuard tightens your daily targets and how firmly it nudges you.
+        <Text style={styles.headline}>
+          Improvement{'\n'}pace
         </Text>
-      </View>
+        <Text style={styles.sub}>
+          Controls how fast ScrollGuard tightens your daily targets and how firmly it nudges you. You can change this anytime.
+        </Text>
 
-      {loading ? (
-        <View style={styles.loader}>
-          <ActivityIndicator color={colors.accent} size="large" />
-        </View>
-      ) : (
-        <View style={styles.cards}>
-          {LEVELS.map((level) => {
-            const preset = INTENSITY_PRESETS[level];
-            const accent = INTENSITY_COLORS[level].accent;
-            const isActive = intensity === level;
-            return (
-              <TouchableOpacity
+        {loading ? (
+          <View style={{ paddingTop: 40, alignItems: 'center' }}>
+            <ActivityIndicator color={SG.balanced} size="large" />
+          </View>
+        ) : (
+          <View style={styles.cards}>
+            {LEVELS.map((level) => (
+              <PaceCard
                 key={level}
-                style={[styles.card, isActive && { borderColor: accent, backgroundColor: accent + '18' }]}
-                onPress={() => setIntensity(level)}
-                activeOpacity={0.75}
-              >
-                <View style={styles.cardHeader}>
-                  <Text style={[styles.cardLabel, isActive && { color: accent }]}>{preset.label}</Text>
-                  <Text style={[styles.cardTagline, isActive && { color: accent }]}>{preset.tagline}</Text>
-                </View>
-                <Text style={styles.cardDesc}>{preset.description}</Text>
-                <View style={styles.statsRow}>
-                  <View style={styles.stat}>
-                    <Text style={styles.statValue}>{preset.sampleDays}d</Text>
-                    <Text style={styles.statLabel}>baseline</Text>
-                  </View>
-                  <View style={styles.stat}>
-                    <Text style={styles.statValue}>{Math.round(preset.weeklyReductionPct * 100)}%</Text>
-                    <Text style={styles.statLabel}>weekly cut</Text>
-                  </View>
-                  <View style={styles.stat}>
-                    <Text style={styles.statValue}>{preset.cooldownMinutes}m</Text>
-                    <Text style={styles.statLabel}>cooldown</Text>
-                  </View>
-                </View>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
-      )}
+                level={level}
+                selected={intensity === level}
+                onSelect={() => setIntensity(level)}
+              />
+            ))}
+          </View>
+        )}
 
-      <View style={styles.footer}>
-        <TouchableOpacity
-          style={styles.saveBtn}
+        <View style={{ height: 18 }} />
+        <SgButton
           onPress={handleSave}
           disabled={saving || loading}
-          activeOpacity={0.85}
-        >
-          {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveBtnText}>Save changes</Text>}
-        </TouchableOpacity>
-      </View>
-    </SafeAreaView>
+          label={saving ? 'Saving…' : 'Save changes'}
+        />
+        <View style={{ height: 16 }} />
+      </ScrollView>
+    </SgScreen>
   );
 }
+
+const styles = StyleSheet.create({
+  scroll: { flexGrow: 1, paddingHorizontal: 24, paddingTop: 20, paddingBottom: 24 },
+  headline: {
+    fontFamily: SgFonts.display,
+    fontSize: 38,
+    color: SG.fg,
+    letterSpacing: -0.8,
+    lineHeight: 42,
+    marginTop: 18,
+  },
+  sub: {
+    fontFamily: SgFonts.ui,
+    fontSize: 14,
+    color: SG.fg3,
+    lineHeight: 21,
+    marginTop: 14,
+    marginBottom: 4,
+  },
+  cards: { marginTop: 20, gap: 12 },
+});

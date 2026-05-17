@@ -5,7 +5,6 @@ import {
   Image,
   StyleSheet,
   TouchableOpacity,
-  SafeAreaView,
   SectionList,
   TextInput,
   ActivityIndicator,
@@ -15,123 +14,40 @@ import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../navigation/AppNavigator';
 import { UsageStats, CuratedApp, InstalledApp } from '../../modules/UsageStats';
 import { MonitorService } from '../../modules/MonitorService';
-import { useTheme, spacing, font, AppColors } from '../../ThemeContext';
+import { SG, SgFonts } from '../../theme';
+import { useTheme } from '../../ThemeContext';
+import {
+  SgScreen,
+  SgButton,
+  BackLink,
+  StepPill,
+} from '../../components/sg';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'AppSelection'>;
-
-type AppItem = { packageName: string; appName: string; installed: boolean };
+type AppItem = { packageName: string; appName: string };
 type Section = { title: string; data: AppItem[] };
 
-function makeStyles(c: AppColors) {
-  return StyleSheet.create({
-    container: { flex: 1, backgroundColor: c.bg },
-    header: { paddingHorizontal: spacing.lg, paddingTop: spacing.lg, paddingBottom: spacing.sm },
-    backBtn: { marginBottom: spacing.md },
-    backText: { color: c.accent, fontSize: font.md, fontWeight: '600' },
-    step: { color: c.accent, fontSize: font.sm, fontWeight: '600', marginBottom: spacing.sm },
-    title: { fontSize: font.xl, fontWeight: '700', color: c.textPrimary, marginBottom: spacing.sm },
-    subtitle: { fontSize: font.sm, color: c.textSecondary, lineHeight: 20 },
-
-    searchContainer: { paddingHorizontal: spacing.lg, paddingVertical: spacing.sm },
-    searchInput: {
-      backgroundColor: c.surface,
-      borderRadius: 10,
-      paddingHorizontal: spacing.md,
-      paddingVertical: 10,
-      fontSize: font.md,
-      color: c.textPrimary,
-      borderWidth: 1,
-      borderColor: c.border,
-    },
-
-    loader: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: spacing.md },
-    loaderText: { color: c.textSecondary, fontSize: font.md },
-
-    listContainer: {
-      flex: 1,
-      marginHorizontal: spacing.lg,
-      marginBottom: spacing.sm,
-      backgroundColor: c.bg,
-      borderRadius: 12,
-      borderWidth: 1,
-      borderColor: c.border,
-      // no overflow:hidden — allows scrollbar indicator to render at the edge
-    },
-    list: { paddingHorizontal: spacing.sm, paddingTop: spacing.sm, paddingBottom: spacing.sm },
-
-    sectionHeader: {
-      fontSize: font.xs,
-      fontWeight: '700',
-      color: c.textSecondary,
-      textTransform: 'uppercase',
-      letterSpacing: 0.8,
-      paddingHorizontal: spacing.sm,
-      paddingTop: spacing.sm,
-      paddingBottom: spacing.xs,
-    },
-
-    appRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      backgroundColor: c.surface,
-      borderRadius: 10,
-      padding: spacing.md,
-      marginBottom: spacing.sm,
-      borderWidth: 1.5,
-      borderColor: 'transparent',
-    },
-    appRowSelected: { borderColor: c.accent },
-    appIconWrap: {
-      width: 40, height: 40, borderRadius: 10,
-      backgroundColor: c.border, justifyContent: 'center', alignItems: 'center',
-      marginRight: spacing.sm, overflow: 'hidden',
-    },
-    appIconImg: { width: 40, height: 40, borderRadius: 10 },
-    appIconInitial: { fontSize: 18, fontWeight: '700', color: c.textSecondary },
-    appInfo: { flex: 1 },
-    nameLine: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, flexWrap: 'wrap' },
-    appName: { fontSize: font.md, fontWeight: '600', color: c.textPrimary },
-    appPkg: { fontSize: font.xs, color: c.textSecondary, marginTop: 2 },
-    checkbox: {
-      width: 24,
-      height: 24,
-      borderRadius: 6,
-      borderWidth: 2,
-      borderColor: c.border,
-      justifyContent: 'center',
-      alignItems: 'center',
-    },
-    checkboxSelected: { backgroundColor: c.accent, borderColor: c.accent },
-    checkMark: { color: '#fff', fontSize: 14, fontWeight: '700' },
-    emptyMsg: { color: c.textSecondary, fontSize: font.sm, padding: spacing.md, textAlign: 'center' },
-
-    footer: { paddingHorizontal: spacing.lg, paddingBottom: spacing.xl, gap: spacing.sm },
-    selectionCount: { color: c.textSecondary, fontSize: font.sm, textAlign: 'center' },
-    primaryBtn: { backgroundColor: c.accent, paddingVertical: spacing.md, borderRadius: 12, alignItems: 'center' },
-    primaryBtnText: { color: '#fff', fontSize: font.md, fontWeight: '600' },
-    nudgeBanner: {
-      backgroundColor: c.surface,
-      borderRadius: 10,
-      padding: spacing.sm,
-      borderLeftWidth: 3,
-      borderLeftColor: c.warning,
-    },
-    nudgeText: { color: c.warning, fontSize: font.sm, lineHeight: 20 },
-  });
+function initColor(str: string): string {
+  const palette = [SG.strict, SG.balanced, SG.gentle, SG.amber, '#7B52AB', '#1DA462'];
+  let h = 0;
+  for (let i = 0; i < str.length; i++) h = ((h << 5) - h) + str.charCodeAt(i);
+  return palette[Math.abs(h) % palette.length];
 }
-
-type RowStyles = ReturnType<typeof makeStyles>;
 
 function AppRow({
   item,
   isSelected,
   onToggle,
-  styles,
+  accent,
+  accentSoft,
+  accentLine,
 }: {
   item: AppItem;
   isSelected: boolean;
   onToggle: (pkg: string) => void;
-  styles: RowStyles;
+  accent: string;
+  accentSoft: string;
+  accentLine: string;
 }) {
   const [icon, setIcon] = useState<string | null>(null);
 
@@ -143,32 +59,66 @@ function AppRow({
     return () => { cancelled = true; };
   }, [item.packageName]);
 
+  const color = initColor(item.packageName);
+
   return (
     <TouchableOpacity
-      style={[styles.appRow, isSelected && styles.appRowSelected]}
+      style={[
+        rowStyles.row,
+        isSelected
+          ? { backgroundColor: accentSoft, borderColor: accentLine }
+          : { backgroundColor: SG.bg2, borderColor: SG.lineSoft },
+      ]}
       onPress={() => onToggle(item.packageName)}
       activeOpacity={0.75}
     >
-      <View style={styles.appIconWrap}>
+      <View style={[rowStyles.iconWrap, { backgroundColor: color }]}>
         {icon ? (
-          <Image source={{ uri: `data:image/png;base64,${icon}` }} style={styles.appIconImg} />
+          <Image source={{ uri: `data:image/png;base64,${icon}` }} style={rowStyles.icon} />
         ) : (
-          <Text style={styles.appIconInitial}>{item.appName[0]?.toUpperCase()}</Text>
+          <Text style={rowStyles.initial}>{item.appName[0]?.toUpperCase()}</Text>
         )}
       </View>
-      <View style={styles.appInfo}>
-        <Text style={styles.appName}>{item.appName}</Text>
-      </View>
-      <View style={[styles.checkbox, isSelected && styles.checkboxSelected]}>
-        {isSelected && <Text style={styles.checkMark}>✓</Text>}
+      <Text style={rowStyles.name} numberOfLines={1}>{item.appName}</Text>
+      <View style={[
+        rowStyles.check,
+        isSelected ? { backgroundColor: accent, borderColor: accent } : { borderColor: SG.line },
+      ]}>
+        {isSelected && <Text style={rowStyles.checkMark}>✓</Text>}
       </View>
     </TouchableOpacity>
   );
 }
 
+const rowStyles = StyleSheet.create({
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: SG.rMd,
+    padding: 14,
+    marginBottom: 8,
+    borderWidth: 1,
+    gap: 14,
+  },
+  iconWrap: {
+    width: 36, height: 36, borderRadius: 10,
+    justifyContent: 'center', alignItems: 'center',
+    overflow: 'hidden', flexShrink: 0,
+  },
+  icon: { width: 36, height: 36, borderRadius: 10 },
+  initial: { fontSize: 16, fontWeight: '700', color: '#fff' },
+  name: { flex: 1, fontFamily: SgFonts.uiMedium, fontSize: 14.5, color: SG.fg },
+  check: {
+    width: 22, height: 22, borderRadius: 7,
+    borderWidth: 1.5,
+    justifyContent: 'center', alignItems: 'center',
+    flexShrink: 0,
+  },
+  checkMark: { color: '#fff', fontSize: 13, fontWeight: '700' },
+});
+
 export default function AppSelectionScreen({ navigation }: Props) {
-  const { colors } = useTheme();
-  const styles = useMemo(() => makeStyles(colors), [colors]);
+  const { accent, accentSoft, accentLine } = useTheme();
 
   const [curatedApps, setCuratedApps] = useState<CuratedApp[]>([]);
   const [userApps, setUserApps] = useState<InstalledApp[]>([]);
@@ -182,10 +132,7 @@ export default function AppSelectionScreen({ navigation }: Props) {
       UsageStats.getCuratedAppsWithStatus().catch(() => [] as CuratedApp[]),
       UsageStats.getInstalledUserApps().catch(() => [] as InstalledApp[]),
     ]).then(([curated, user]) => {
-      const installedCurated = curated
-        .filter((a) => a.installed)
-        .sort((a, b) => a.appName.localeCompare(b.appName));
-      setCuratedApps(installedCurated);
+      setCuratedApps(curated.filter((a) => a.installed).sort((a, b) => a.appName.localeCompare(b.appName)));
       setUserApps(user);
       setLoading(false);
     });
@@ -195,15 +142,17 @@ export default function AppSelectionScreen({ navigation }: Props) {
     const q = search.toLowerCase();
     const matches = (name: string, pkg: string) =>
       !q || name.toLowerCase().includes(q) || pkg.toLowerCase().includes(q);
-    const filteredCurated: AppItem[] = curatedApps
-      .filter((a) => matches(a.appName, a.packageName))
-      .map((a) => ({ packageName: a.packageName, appName: a.appName, installed: true }));
-    const filteredUser: AppItem[] = userApps
-      .filter((a) => matches(a.appName, a.packageName))
-      .map((a) => ({ packageName: a.packageName, appName: a.appName, installed: true }));
     return [
-      { title: 'Popular apps on your device', data: filteredCurated },
-      { title: 'Other apps on your device', data: filteredUser },
+      {
+        title: 'Popular apps on your device',
+        data: curatedApps.filter((a) => matches(a.appName, a.packageName))
+          .map((a) => ({ packageName: a.packageName, appName: a.appName })),
+      },
+      {
+        title: 'Other apps on your device',
+        data: userApps.filter((a) => matches(a.appName, a.packageName))
+          .map((a) => ({ packageName: a.packageName, appName: a.appName })),
+      },
     ].filter((s) => s.data.length > 0);
   }, [curatedApps, userApps, search]);
 
@@ -228,31 +177,27 @@ export default function AppSelectionScreen({ navigation }: Props) {
     }
   };
 
-  const renderItem = ({ item }: { item: AppItem }) => (
-    <AppRow
-      item={item}
-      isSelected={selected.has(item.packageName)}
-      onToggle={toggle}
-      styles={styles}
-    />
-  );
-
   return (
-    <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
-          <Text style={styles.backText}>← Back</Text>
-        </TouchableOpacity>
-        <Text style={styles.step}>Step 3 of 3</Text>
-        <Text style={styles.title}>Which apps do you want to watch?</Text>
-        <Text style={styles.subtitle}>Only apps installed on your device are shown.</Text>
+    <SgScreen style={{ paddingHorizontal: 24, paddingTop: 20 }}>
+      {/* Header */}
+      <BackLink onPress={() => navigation.goBack()} />
+      <View style={{ marginTop: 12 }}>
+        <StepPill n={3} total={3} />
       </View>
+      <Text style={styles.headline}>
+        Which apps{'\n'}should I watch?
+      </Text>
+      <Text style={styles.sub}>
+        Only apps installed on your device are shown. You can change this anytime.
+      </Text>
 
-      <View style={styles.searchContainer}>
+      {/* Search */}
+      <View style={styles.searchBox}>
+        <Text style={styles.searchIcon}>🔍</Text>
         <TextInput
-          style={styles.searchInput}
+          style={[styles.searchInput, { color: SG.fg }]}
           placeholder="Search apps…"
-          placeholderTextColor={colors.textSecondary}
+          placeholderTextColor={SG.fg4}
           value={search}
           onChangeText={setSearch}
           autoCorrect={false}
@@ -261,54 +206,112 @@ export default function AppSelectionScreen({ navigation }: Props) {
         />
       </View>
 
+      {/* List */}
       {loading ? (
-        <View style={styles.loader}>
-          <ActivityIndicator color={colors.accent} size="large" />
-          <Text style={styles.loaderText}>Loading…</Text>
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+          <ActivityIndicator color={accent} size="large" />
         </View>
       ) : (
-        <View style={styles.listContainer}>
-          <SectionList
-            sections={sections}
-            keyExtractor={(item) => item.packageName}
-            contentContainerStyle={styles.list}
-            showsVerticalScrollIndicator={true}
-            persistentScrollbar={true}
-            stickySectionHeadersEnabled={false}
-            renderSectionHeader={({ section }) => (
-              <Text style={styles.sectionHeader}>{section.title}</Text>
-            )}
-            renderItem={renderItem}
-            ListEmptyComponent={<Text style={styles.emptyMsg}>No apps match "{search}"</Text>}
-          />
-        </View>
+        <SectionList
+          style={{ flex: 1 }}
+          contentContainerStyle={{ paddingTop: 4, paddingBottom: 8 }}
+          sections={sections}
+          keyExtractor={(item) => item.packageName}
+          showsVerticalScrollIndicator={true}
+          persistentScrollbar={true}
+          stickySectionHeadersEnabled={false}
+          renderSectionHeader={({ section }) => (
+            <Text style={styles.sectionHeader}>{section.title.toUpperCase()}</Text>
+          )}
+          renderItem={({ item }) => (
+            <AppRow
+              item={item}
+              isSelected={selected.has(item.packageName)}
+              onToggle={toggle}
+              accent={accent}
+              accentSoft={accentSoft}
+              accentLine={accentLine}
+            />
+          )}
+          ListEmptyComponent={
+            <Text style={styles.empty}>No apps match "{search}"</Text>
+          }
+        />
       )}
 
-      <View style={styles.footer}>
-        <Text style={styles.selectionCount}>{selected.size} selected</Text>
-        {selected.size === 0 && (
-          <View style={styles.nudgeBanner}>
-            <Text style={styles.nudgeText}>
-              ⚠ No apps selected — ScrollGuard won't track or nudge anything yet.
-              You can change this later from the dashboard.
-            </Text>
-          </View>
-        )}
-        <TouchableOpacity
-          style={styles.primaryBtn}
+      {/* Footer */}
+      <View style={{ paddingTop: 12, paddingBottom: 16 }}>
+        <Text style={styles.count}>
+          {selected.size > 0 ? `${selected.size} SELECTED` : '0 SELECTED'}
+        </Text>
+        <View style={{ height: 10 }} />
+        <SgButton
           onPress={handleDone}
           disabled={saving}
-          activeOpacity={0.85}
-        >
-          {saving ? (
-            <ActivityIndicator color="#fff" />
-          ) : (
-            <Text style={styles.primaryBtnText}>
-              {selected.size === 0 ? 'Skip for now →' : 'Start watching →'}
-            </Text>
-          )}
-        </TouchableOpacity>
+          label={saving ? 'Saving…' : selected.size === 0 ? 'Skip for now →' : 'Start watching →'}
+        />
       </View>
-    </SafeAreaView>
+    </SgScreen>
   );
 }
+
+const styles = StyleSheet.create({
+  headline: {
+    fontFamily: SgFonts.display,
+    fontSize: 38,
+    color: SG.fg,
+    letterSpacing: -0.8,
+    lineHeight: 42,
+    marginTop: 18,
+  },
+  sub: {
+    fontFamily: SgFonts.ui,
+    fontSize: 14.5,
+    color: SG.fg3,
+    lineHeight: 21,
+    letterSpacing: -0.1,
+    marginTop: 14,
+    marginBottom: 18,
+  },
+  searchBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    height: 46,
+    backgroundColor: SG.bg2,
+    borderWidth: 1,
+    borderColor: SG.lineSoft,
+    borderRadius: SG.rMd,
+    paddingHorizontal: 14,
+    gap: 10,
+    marginBottom: 4,
+  },
+  searchIcon: { fontSize: 14, opacity: 0.6 },
+  searchInput: {
+    flex: 1,
+    fontFamily: SgFonts.ui,
+    fontSize: 14,
+    paddingVertical: 0,
+  },
+  sectionHeader: {
+    fontFamily: SgFonts.mono,
+    fontSize: 10,
+    color: SG.fg3,
+    letterSpacing: 1.2,
+    paddingVertical: 8,
+    paddingHorizontal: 2,
+  },
+  empty: {
+    fontFamily: SgFonts.ui,
+    fontSize: 14,
+    color: SG.fg3,
+    padding: 16,
+    textAlign: 'center',
+  },
+  count: {
+    fontFamily: SgFonts.mono,
+    fontSize: 11.5,
+    color: SG.fg3,
+    textAlign: 'center',
+    letterSpacing: 0.8,
+  },
+});
