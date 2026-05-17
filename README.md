@@ -1,343 +1,304 @@
-# ScrollGuard — Product Requirements Document
+# ScrollGuard
 
-> **Status:** Draft v0.1 — for internal review  
-> **Author:** Suraj Singh
-> **Last Updated:** 9 May 2026  
+An Android digital wellbeing companion app. Not a blocker — a companion. It earns the user's trust first by observing silently, then nudges gently, and finally redirects attention toward offline activities. Built with React Native + Expo bare workflow.
 
----
-
-## 1. The Problem
-
-The average person opens their phone 100+ times a day. A significant chunk of that is not intentional — it is reflex. You pick up the phone to check one message and surface 40 minutes later having scrolled through reels, news, and content you did not choose to watch.
-
-Existing solutions attack this with a hammer:
-
-- **Native tools** (Android Digital Wellbeing, iOS Screen Time): blunt daily limits with a one-tap "Ignore" bypass. Functionally useless for compulsive behaviour.
-- **Hard blockers** (Opal, Freedom): cut access entirely. Create resentment, not habits. High churn post-trial.
-- **Friction inserters** (One Sec, ScreenZen): scientifically better, but stop at the pause. They do not redirect you anywhere. The dopamine need remains unaddressed.
-
-**Nobody is building a companion.** Every existing tool is a cop. There is no product that earns your trust first, nudges you gently, and then redirects your freed attention toward something real.
+> **Product vision, personas, GTM, and success metrics:** [`docs/PRD.md`](docs/PRD.md)
 
 ---
 
-## 2. Vision
+## Tech Stack
 
-> Help people reclaim their time — not by punishing screen use, but by making offline life feel more rewarding, one small step at a time.
-
-The product is a **digital wellbeing companion**, not a blocker. The relationship arc looks like this:
-
-```
-Week 1 → Earn trust (observe, show data, no intervention)
-Week 2 → Gentle nudges (soft notifications at usage milestones)
-Week 3 → Habit redirection (suggest offline activities)
-Week 4+ → Challenges + streaks (progressive commitment)
-```
-
-The user never feels ambushed. The hard stop is a last resort, not a first response.
-
----
-
-## 3. Target Segment
-
-### Primary: Urban Indian Adults, 18–25, Android
-
-| Attribute | Detail |
-|-----------|--------|
-| Device | Android (95%+ India market share) |
-| Geography | Tier 1 Indian cities to start (Bengaluru, Mumbai, Delhi, Pune, Hyderabad) |
-| Pain awareness | High — 82% of Gen Z adults self-identify as social media addicted |
-| Motivation | Wants to be productive, feels guilt about scrolling, has tried and failed with willpower |
-| Platforms abused | Instagram, YouTube, Reddit, Snapchat |
-| Willingness to pay | ₹99–149/month if the product delivers visible progress |
-
-### Why not teenagers (13–17)?
-
-They are the *most* affected demographic but the wrong MVP target. Reasons:
-- Parental consent flows add legal and UX complexity
-- Cannot self-subscribe — monetisation requires parents = long sales cycle
-- DPDP Act (India) and COPPA compliance overhead
-- Target for V3 once core product is validated
-
-### Why not working professionals (26–35)?
-
-Good secondary market but harder to reach. Usage patterns are different (LinkedIn, news, WhatsApp vs. Reels/YouTube). Target for V2 expansion.
-
----
-
-## 4. User Personas
-
-### Persona A — "The Guilty Scroller" (Primary)
-**Arjun, 21, Engineering student, Pune**
-- Spends 5–6 hours/day on YouTube and Instagram
-- Knows it is a problem, has tried Screen Time, disabled it after 2 days
-- Wants to study more, go to the gym, cook — but the phone wins every time
-- Would pay ₹99/month if the app actually showed him improving
-
-### Persona B — "The Motivated Starter" (Secondary)
-**Priya, 24, Junior software engineer, Bengaluru**
-- Recently started a "no phone after 10pm" rule — broke it 3 days in
-- Fitness-conscious, already uses a step tracker
-- Wants accountability, not lecturing
-- Would recommend the app to friends if it worked — high referral potential
-
----
-
-## 5. Product Principles
-
-1. **Companion, not cop.** Never surprise the user. No hard blocks without consent and ramp-up.
-2. **Progress over perfection.** A 10% reduction celebrated is better than a 50% reduction resented.
-3. **Replace, don't just remove.** Every intervention should offer an alternative, not a wall.
-4. **Earn the right to push harder.** Interventions get stronger only as trust is established over time.
-5. **Data stays on device.** No selling usage data. Privacy is a product feature, not a footnote.
-
----
-
-## 6. User Journey
-
-```mermaid
-journey
-    title User's First 4 Weeks with ScrollGuard
-    section Week 1 — Awareness
-      Install app & grant permissions: 5: User
-      Select distracting apps to watch: 4: User
-      See usage dashboard (no intervention): 5: User
-      Receive weekly summary notification: 4: App
-    section Week 2 — Gentle Nudge
-      30-min milestone nudge on Instagram: 4: App
-      User dismisses — that's fine: 3: User
-      60-min soft nudge with activity suggestion: 3: App
-      User tries suggested activity: 3: User
-    section Week 3 — Habit Redirect
-      Companion suggests a 10-min walk: 4: App
-      User completes walk, marks done: 4: User
-      First streak milestone (3 days): 5: App
-      User shares streak (optional): 3: User
-    section Week 4 — Challenge Mode
-      Weekly challenge unlocked: 5: App
-      User sets personal screen time goal: 4: User
-      Hard limit introduced (with consent): 4: App
-      User sees monthly improvement report: 5: App
-```
-
----
-
-## 7. Core User Flow
-
-```mermaid
-flowchart TD
-    A([App Install]) --> B[Onboarding <br/> Grant UsageStats permission]
-    B --> C[Grant Accessibility <br/> Service permission]
-    C --> D[Select apps to monitor<br/>Instagram / YouTube / Reddit etc.]
-    D --> E[Week 1: <br/> Silent Observation Mode]
-
-    E --> F{Usage milestone<br/>hit?}
-    F -- 30 min --> G[Soft nudge notification<br/>'Still intentional?']
-    F -- 60 min --> H[Activity suggestion notification<br/>'10-min walk?']
-    F -- No milestone --> I[Background tracking <br/>continues]
-
-    G --> J{User response}
-    H --> J
-    J -- Ignored --> K[Log event, no penalty]
-    J -- Accepted activity --> L[Mark activity complete<br/>Streak +1]
-
-    L --> M[Dashboard updated]
-    K --> M
-    I --> M
-
-    M --> N{Week 3+?}
-    N -- Yes --> O[Unlock: Challenge mode<br/>User sets weekly goal]
-    N -- No --> E
-
-    O --> P{Goal hit this week?}
-    P -- Yes --> Q[Celebrate + next challenge]
-    P -- No --> R[Compassionate recap<br/>'Here's what helped']
-    Q --> O
-    R --> O
-```
-
----
-
-## 8. Feature Scope
-
-### V1 — Validate Core Loop (Target: 8–10 weeks to build)
-
-**Goal:** Prove that users will engage with a companion-style nudge over 30 days without churning.  
-**Success metric:** 40%+ of installs still active at Day 30.
-
-| Feature | Description | Priority |
-|---|---|---|
-| App usage tracking | Read daily time-in-app via `UsageStatsManager` | Must |
-| App selection | User picks 2–5 apps to monitor | Must |
-| Milestone notifications | Soft nudge at 30 min, 60 min per selected app | Must |
-| Activity suggestion | Static list of 30 offline suggestions shown with nudge | Must |
-| Dashboard | Today's usage, yesterday comparison, streak counter | Must |
-| Weekly summary | Sunday evening push notification recap | Must |
-| Onboarding | Permission flow with plain-language explanation | Must |
-| Activity confirmation | One-tap "I did it" to count streak | Should |
-| Data privacy screen | All data is on-device, no account needed | Should |
-
-**Explicitly out of scope for V1:**
-- User accounts / login
-- Social features
-- AI or personalised suggestions
-- Custom challenge creation
-- Cross-device tracking
-- Payments / paywall
-
----
-
-### V2 — Retention + Monetisation (Target: 3–4 months post V1 launch)
-
-**Goal:** Convert engaged free users to paid. Introduce personalisation.  
-**Success metric:** >3% free-to-paid conversion. Day 60 retention >25%.
-
-| Feature | Description |
+| Layer | Technology |
 |---|---|
-| Freemium paywall | Basic tracking free. Challenge system + history behind ₹99/month |
-| Challenge system | Weekly themed challenges (e.g. "Scroll-free mornings for 5 days") |
-| Categorised activities | Activities grouped by time available (5 min / 15 min / 30 min+) |
-| Smarter nudge timing | Learn user's high-risk windows (e.g. 10pm–midnight) and nudge earlier |
-| Monthly report | Visual progress over 30 days — shareable card |
-| Referral mechanic | Share streak card to WhatsApp/Instagram stories |
-| Razorpay integration | In-app subscription for Indian users |
+| Framework | React Native 0.74 + Expo SDK 51 (bare workflow) |
+| Language | TypeScript (JS layer) + Kotlin (native modules) |
+| Android min SDK | 26 (Android 8.0) |
+| Android compile SDK | 34 (hard constraint — expo-modules-core 1.x fails on API 36) |
+| Local storage | expo-sqlite v14 (async API) for usage data; AsyncStorage for preferences |
+| Navigation | @react-navigation/native-stack |
+| Build toolchain | Gradle 8.8 + JDK 21 (Android Studio JDK — not Homebrew) |
 
 ---
 
-### V3 — Expansion (Target: 6+ months post V1)
+## Prerequisites
 
-**Goal:** Expand to new segments and platforms.
+```bash
+# Required
+node >= 18
+Android Studio (with Android SDK 34 installed)
+Java 21 — must point to Android Studio's JDK, not Homebrew
+watchman           # prevents EMFILE errors on macOS
 
-| Feature | Description |
-|---|---|
-| Teen mode | Parental oversight dashboard, age-appropriate UI, DPDP-compliant |
-| Partner integrations | Link with Strava, Headspace, or a recipe app for richer activity suggestions |
-| Accountability circles | Opt-in groups (friends / family) with shared streaks |
-| iOS port | Leverage existing React Native codebase — work within ScreenTime API limits |
-| Laptop companion | Chrome extension for browser doomscrolling (YouTube, Reddit) |
-| B2B / employer tier | Wellness dashboard for HR teams; HRMS integrations |
-
----
-
-## 9. Technical Architecture (V1)
-
-```mermaid
-flowchart LR
-    subgraph Android Device
-        A[UsageStatsManager<br/>Android API] --> B[Background Service<br/>Kotlin Native Module]
-        C[AccessibilityService<br/>Overlay trigger] --> B
-        B --> D[Local SQLite DB<br/>via Room]
-        D --> E[React Native JS Layer<br/>Expo Bare Workflow]
-        E --> F[Dashboard UI]
-        E --> G[Expo Notifications<br/>Local push]
-        E --> H[Activity Suggestion Engine<br/>Static JSON v1]
-    end
-
-    subgraph Future V2
-        I[Razorpay SDK] --> E
-        J[Firebase Analytics<br/>Crash reporting] --> E
-    end
+# Environment variable (add to ~/.zshrc or ~/.bash_profile)
+export JAVA_HOME=/Applications/Android\ Studio.app/Contents/jbr/Contents/Home
 ```
 
-**Key technical decisions:**
+---
 
-| Decision | Choice | Rationale |
-|---|---|---|
-| Framework | React Native + Expo Bare | Cross-platform later. Bare workflow needed for native Android APIs |
-| Screen time data | `UsageStatsManager` | Only reliable way to get per-app usage on Android without root |
-| In-app overlay | `AccessibilityService` | Enables mid-session nudge overlay inside Instagram/YouTube |
-| Storage | SQLite on-device (Room via native module) | No backend in V1. Privacy by design. |
-| Notifications | Expo Notifications | Handles local push without a server in V1 |
-| Backend | None in V1 | Eliminates ops cost, speeds launch, validates core loop offline |
+## Setup
+
+```bash
+git clone https://github.com/surajs1n/ScrollGuard.git
+cd ScrollGuard
+npm install
+```
 
 ---
 
-## 10. Permissions Required
+## Running
+
+```bash
+# Start Metro bundler
+npx react-native start
+
+# In a second terminal — build and install on connected device / emulator
+npx react-native run-android
+```
+
+> The app only runs on Android. There is no iOS build.
+
+---
+
+## Building a Release APK
+
+```bash
+cd android
+./gradlew assembleRelease
+```
+
+Output: `android/app/build/outputs/apk/release/app-release.apk`
+
+The release keystore (`scrollguard-release.jks`) is in `android/app/`. Password is stored in `android/app/build.gradle` under `signingConfigs.release`.
+
+---
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────┐
+│                   React Native JS Layer              │
+│                                                     │
+│  src/screens/          src/modules/                 │
+│  ├─ onboarding/        ├─ UsageStats.ts  ──────────►│─┐
+│  ├─ dashboard/         ├─ MonitorService.ts          │ │ NativeModules bridge
+│  └─ settings/          ├─ Overlay.ts    ──────────►│─┤
+│                         └─ ExportService.ts          │ │
+│  src/storage/db.ts  (SQLite)                        │ │
+│  src/config/intensityPresets.ts                     │ │
+└─────────────────────────────────────────────────────┘ │
+                                                        │
+┌─────────────────────────────────────────────────────┐ │
+│              Kotlin Native Modules                   │◄┘
+│                                                     │
+│  usagestats/UsageStatsModule.kt                     │
+│    - hasPermission / openPermissionSettings         │
+│    - queryUsageStats / getMonitoredAppsUsage        │
+│    - getCuratedAppsWithStatus                       │
+│    - getInstalledUserApps                           │
+│    - setMonitorPrefs (writes SharedPreferences)     │
+│                                                     │
+│  overlay/OverlayModule.kt                           │
+│    - hasOverlayPermission                           │
+│    - requestOverlayPermission                       │
+│    - showNudge / hideNudge                          │
+│                                                     │
+│  service/UsageMonitorService.kt  (foreground svc)   │
+│    - polls every 60s                                │
+│    - reads config from SharedPreferences            │
+│    - triggers overlay nudge via NudgeOverlayService │
+│                                                     │
+│  overlay/ScrollGuardAccessibilityService.kt         │
+│    - detects foreground app changes                 │
+│    - notifies UsageMonitorService                   │
+│                                                     │
+│  service/BootReceiver.kt                            │
+│    - restarts UsageMonitorService after reboot      │
+└─────────────────────────────────────────────────────┘
+                          │
+                          ▼
+            SharedPreferences (scrollguard_prefs)
+            SQLite (scrollguard.db via expo-sqlite)
+            AsyncStorage (user preferences)
+```
+
+---
+
+## Module Map
+
+### JS Modules (`src/modules/`)
+
+| File | Responsibility |
+|---|---|
+| `UsageStats.ts` | Bridge to `UsageStatsModule.kt`. All usage data queries, curated + installed app lists |
+| `MonitorService.ts` | Manages monitored apps + intensity in AsyncStorage; writes resolved preset values to native SharedPreferences via `UsageStats.setMonitorPrefs` |
+| `Overlay.ts` | Bridge to `OverlayModule.kt`. Permission checks and nudge overlay control |
+| `ExportService.ts` | Reads SQLite + AsyncStorage, serialises to JSON, triggers share sheet via RN `Share` API |
+
+### Config (`src/config/`)
+
+| File | Responsibility |
+|---|---|
+| `intensityPresets.ts` | **Single source of truth** for all intensity parameters (Gentle / Balanced / Strict). Also contains the phase-aware banner message matrix (`INTENSITY_MESSAGES`) and `getBannerPhase()`. Change a value here and it flows through the entire app automatically |
+
+### Storage (`src/storage/`)
+
+| File | Responsibility |
+|---|---|
+| `db.ts` | SQLite schema + all async query functions: usage snapshots, activity completions, streaks, weekly chart data |
+
+### Screens (`src/screens/`)
+
+| Screen | Route | Purpose |
+|---|---|---|
+| `WelcomeScreen` | `Welcome` | Onboarding entry |
+| `PermissionUsageStatsScreen` | `PermissionUsageStats` | Step 1 of 3 — PACKAGE_USAGE_STATS |
+| `PermissionOverlayScreen` | `PermissionOverlay` | Step 2 of 3 — SYSTEM_ALERT_WINDOW |
+| `AppSelectionScreen` | `AppSelection` | Step 3 of 3 — pick apps to monitor (curated + device) |
+| `IntensitySelectionScreen` | `IntensitySelection` | Step 4 — choose Gentle / Balanced / Strict |
+| `DashboardScreen` | `Dashboard` | Home screen — weekly chart, usage breakdown, suggestions |
+| `SettingsScreen` | `Settings` | Hub: Monitored Apps / Improvement Pace / Export |
+| `MonitoredAppsScreen` | `MonitoredApps` | Edit monitored apps post-onboarding |
+| `IntensitySettingsScreen` | `IntensitySettings` | Edit intensity preset post-onboarding |
+
+---
+
+## Data Flow
+
+```
+User opens app
+     │
+     ▼
+App.tsx reads AsyncStorage for onboarding completion flag
+     │
+     ├─ Not completed → WelcomeScreen (onboarding flow)
+     │
+     └─ Completed → DashboardScreen
+                         │
+                         ▼
+              loadData() on every focus + AppState 'active'
+                         │
+              ┌──────────┼──────────────┐
+              │          │              │
+              ▼          ▼              ▼
+        UsageStats   getStreak()   getWeeklyUsageTotals()
+        .getTodayUsage()  (SQLite)     (SQLite)
+        (→ Kotlin UsageStatsManager)
+              │
+              ▼
+        upsertUsageSnapshot() → SQLite (persists today's data)
+```
+
+### Intensity config flow (JS → Native)
+
+```
+User selects intensity in IntensitySelectionScreen or IntensitySettingsScreen
+     │
+     ▼
+MonitorService.setIntensity(level)
+     │
+     ├─ Saves level string to AsyncStorage
+     │
+     └─ Calls UsageStats.setMonitorPrefs(installDate, packages, intensity,
+              sampleDays, weeklyReductionPct, nudgeBufferPct,
+              frictionType, cooldownMinutes, baselineCapMinutes, floorMinutes)
+                    │
+                    ▼
+            UsageStatsModule.kt writes resolved numbers to SharedPreferences
+                    │
+                    ▼
+            UsageMonitorService.kt reads SharedPreferences each polling cycle
+            (no knowledge of preset names — only concrete numbers)
+```
+
+---
+
+## SQLite Schema
+
+```sql
+-- Per-app daily usage (upserted on every dashboard load)
+CREATE TABLE usage_snapshots (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  date          TEXT NOT NULL,        -- YYYY-MM-DD
+  package_name  TEXT NOT NULL,
+  app_name      TEXT NOT NULL,
+  total_time_ms INTEGER NOT NULL DEFAULT 0
+);
+CREATE UNIQUE INDEX idx_usage_date_pkg ON usage_snapshots(date, package_name);
+
+-- "I did it" log — one row per activity completion
+CREATE TABLE activity_completions (
+  id             INTEGER PRIMARY KEY AUTOINCREMENT,
+  date           TEXT NOT NULL,
+  activity_id    TEXT NOT NULL,
+  activity_label TEXT NOT NULL,
+  completed_at   INTEGER NOT NULL
+);
+
+-- Single-row streak tracker
+CREATE TABLE streaks (
+  id               INTEGER PRIMARY KEY CHECK (id = 1),
+  current_streak   INTEGER NOT NULL DEFAULT 0,
+  longest_streak   INTEGER NOT NULL DEFAULT 0,
+  last_active_date TEXT
+);
+```
+
+---
+
+## Key Architectural Constraints
+
+- **`compileSdk = 34` is a hard ceiling.** `expo-modules-core` 1.x has a Kotlin null-safety bug on API 36. Do not bump until Expo SDK 52+.
+- **JDK 21 required.** Gradle 8.8 supports up to Java 22. Homebrew Java 24 will break the build. Always use the JDK bundled with Android Studio.
+- **`registerRootComponent` registers as `"main"`.** `MainActivity.getMainComponentName()` must return `"main"` to match.
+- **No new native libraries without a fresh APK build.** Any package with a Kotlin/Java component requires `npx react-native run-android` or a new APK — hot reload is not enough.
+- **Android 11+ package visibility.** Any app package you want to query via `PackageManager` must be declared in the `<queries>` block in `AndroidManifest.xml`, or you'll get false "not installed" results.
+- **`QUERY_ALL_PACKAGES` is not used.** `getInstalledUserApps()` relies on launcher-intent filtering instead. Covers ~95% of real user apps without the Play Store policy restriction.
+- **No backend in V1.** All data is on-device. SQLite + AsyncStorage + SharedPreferences. No Firebase, no server, no account.
+
+---
+
+## AsyncStorage Keys
+
+| Key | Value | Set by |
+|---|---|---|
+| `scrollguard_install_date` | Unix timestamp (ms) as string | `MonitorService.init()` |
+| `scrollguard_monitored_apps` | JSON array of package name strings | `MonitorService.init()` / `updateMonitoredApps()` |
+| `scrollguard_intensity` | `'gentle'` \| `'balanced'` \| `'strict'` | `MonitorService.setIntensity()` |
+| `scrollguard_onboarding_done` | `'true'` | `IntensitySelectionScreen` on completion |
+
+---
+
+## SharedPreferences Keys (`scrollguard_prefs`)
+
+Written by `UsageStatsModule.setMonitorPrefs()`, read by `UsageMonitorService.kt`:
+
+`installDate`, `monitoredApps` (StringSet), `intensity`, `sampleDays`, `weeklyReductionPct`, `nudgeBufferPct`, `frictionType`, `cooldownMinutes`, `baselineCapMinutes`, `floorMinutes`
+
+---
+
+## Adding a New Screen
+
+1. Create `src/screens/<section>/YourScreen.tsx`
+2. Add the route to `RootStackParamList` in `src/navigation/AppNavigator.tsx`
+3. Add `<Stack.Screen name="YourScreen" component={YourScreen} />` to the navigator
+4. Navigate with `navigation.navigate('YourScreen')`
+
+## Adding a New Intensity Preset
+
+Edit only `src/config/intensityPresets.ts`:
+1. Add the new level to `IntensityLevel` type
+2. Add the preset object to `INTENSITY_PRESETS`
+3. Add the banner messages to `INTENSITY_MESSAGES`
+4. All screens, banners, and native config writes update automatically
+
+---
+
+## Permissions
 
 | Permission | Why |
 |---|---|
-| `PACKAGE_USAGE_STATS` | Read per-app time. Requires user to manually enable in Settings |
-| `SYSTEM_ALERT_WINDOW` | Draw overlay nudge on top of other apps |
-| `RECEIVE_BOOT_COMPLETED` | Restart background tracking service after reboot |
-| `FOREGROUND_SERVICE` | Keep tracking service alive in background |
-
-> **Note:** These are sensitive permissions. Onboarding must explain each one in plain language with a clear "why". Users who don't understand will deny and uninstall.
-
----
-
-## 11. Go-to-Market Plan
-
-### Phase 0 — Friends & Family APK (Weeks 1–8)
-- Share APK directly via WhatsApp
-- Target: 15–25 testers
-- Collect: Do they use it after day 7? What do they ignore? What do they love?
-- Tool: Google Forms for structured feedback + informal WhatsApp calls
-
-### Phase 1 — Soft Launch via Personal Network (Month 3)
-- LinkedIn post (founder's story angle — relatable, not a product pitch)
-- WhatsApp broadcast to relevant groups
-- Twitter/X thread on the insight (doomscrolling companion vs. blocker framing)
-- Target: 200–500 installs
-- Measure: D1, D7, D30 retention via Firebase Analytics (free, sufficient for this stage)
-
-### Phase 2 — Paid Acquisition Experiment (Month 4–5, post PMF signal)
-- Run small Meta/Instagram ad campaigns (₹5,000–10,000 budget to start)
-- Target: Urban Indian college students, interest in productivity, self-improvement
-- Attribution: **Firebase + UTM parameters** at this stage, not AppsFlyer
-  - AppsFlyer is excellent but costs ~$300–500/month minimum. Overkill until you're spending ₹1L+/month on ads.
-  - Branch.io is a cheaper alternative with a meaningful free tier
-  - At your current stage: UTM links + Firebase Events gives you 90% of what you need for zero cost
-- Measure: CPI (cost per install), D7 retention by campaign, conversion to paid
-
-### Phase 3 — Community & Organic (Ongoing)
-- Reddit communities: r/digitalminimalism, r/nosurf, r/productivity
-- Indian communities: Reddit India, College-specific WhatsApp/Telegram groups
-- Referral card mechanic (V2): shareable streak image drives organic loop
-
----
-
-## 12. Success Metrics
-
-| Metric | V1 Target | Why It Matters |
-|---|---|---|
-| D1 Retention | >60% | Did onboarding work? |
-| D7 Retention | >35% | Is the core loop compelling? |
-| D30 Retention | >25% | Is there real habit formation? |
-| Avg nudge response rate | >20% | Are notifications landing? |
-| Activity completion rate | >15% of nudges | Does redirection work? |
-| Weekly summary open rate | >40% | Is progress visible enough to motivate? |
-
-> Do not measure downloads. Downloads are vanity. D30 retention is the only number that tells you if the product works.
-
----
-
-## 13. Open Questions (For Discussion)
-
-These are unresolved — input needed from reviewers:
-
-1. **The hard stop design:** At what point (week 4? week 6?) should the app introduce an actual time limit with the user's consent? What should that UX look like to avoid the "abrupt" feeling?
-
-2. **Companion identity:** Should the companion have a name and a visual character, or stay minimal/text-only? A character could drive attachment but adds design scope.
-
-3. **Zero-account V1:** Right call for speed, but means no cross-device, no backup, no referral tracking. Acceptable trade-off?
-
-4. **Notification fatigue risk:** If the user ignores 3 nudges in a row, should the app back off? For how long?
-
-5. **India-first activity suggestions:** "Go for a walk" lands differently at 2pm in June in Chennai vs. 8pm in Bengaluru. Does static content work, or do we need time/weather awareness in V1?
-
----
-
-## 14. What We Are NOT Building
-
-To be explicit — these are intentional exclusions, not oversights:
-
-- ❌ An AI chatbot companion
-- ❌ Cross-device (phone + laptop) tracking in V1
-- ❌ Social media feed replacement
-- ❌ Content recommendations
-- ❌ Any server-side data collection in V1
-- ❌ iOS version before Android PMF is proven
-- ❌ TV / smart device integration
-
----
-
-*This document is a living draft. Last updated May 2026.*
+| `PACKAGE_USAGE_STATS` | Per-app screen time via `UsageStatsManager`. Must be granted manually in Settings |
+| `SYSTEM_ALERT_WINDOW` | Draw nudge overlay on top of other apps |
+| `BIND_ACCESSIBILITY_SERVICE` | Detect foreground app changes |
+| `FOREGROUND_SERVICE` | Keep `UsageMonitorService` alive in background |
+| `RECEIVE_BOOT_COMPLETED` | Restart service after device reboot |

@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Adaptive icon foreground — shield mark on transparent background.
+  Viewport 108×108dp. Shield scaled so all points are within the 33dp safe-zone
+  circle (radius 31dp used to leave a 2dp buffer from the clip boundary).
+
+  Scale derivation:
+    Original 1024×1024 SVG, shield centered at (512,512).
+    Furthest corner (top-right) was 40.6dp from centre at previous scale.
+    New scale s=0.0596: max corner distance = 31dp  ✓
+    All path coordinates: new = (orig - 512) * 0.0596 + 54
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Shield outline (#F4F1EA) -->
+    <path
+        android:pathData="M 54,28.8 C 63.2,28.8 70.8,30.5 76.9,33.1 C 76.9,51.0 75.4,66.2 54,79.2 C 32.6,66.2 31.1,51.0 31.1,33.1 C 37.2,30.5 44.8,28.8 54,28.8 Z"
+        android:strokeColor="#F4F1EA"
+        android:strokeWidth="3.5"
+        android:strokeLineJoin="round"
+        android:fillColor="@android:color/transparent" />
+
+    <!-- Horizon line (#6E66F0) -->
+    <path
+        android:pathData="M 37.2,54 L 70.8,54"
+        android:strokeColor="#6E66F0"
+        android:strokeWidth="3.5"
+        android:strokeLineCap="round"
+        android:fillColor="@android:color/transparent" />
+
+    <!-- Circle dot (#6E66F0) -->
+    <path
+        android:pathData="M 54,46.4 m -4,0 a 4,4 0 1,0 8,0 a 4,4 0 1,0 -8,0"
+        android:fillColor="#6E66F0" />
+
+</vector>
