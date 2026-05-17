@@ -1,9 +1,16 @@
 # ScrollGuard — Claude Instructions
 
+## Interaction rules — read these first
+
+- **Never commit or push unless the user explicitly says so.** "git commit", "git push", or equivalent words must appear in the user's message.
+- **Never build an APK unless the user explicitly asks for it.** Do not trigger `./gradlew assembleRelease` or any build command speculatively after code changes.
+- **When discussing or brainstorming, only present options — never start implementing.** Wait for an explicit "go ahead", "implement it", "do it", or equivalent before writing any code or making file changes.
+- **After making code changes, stop.** Let the user review. Do not chain build → commit → push automatically.
+
 ## Git workflow rules
 
-- **Never commit automatically.** Only commit when the user explicitly says "git commit" or equivalent.
-- **Never push automatically.** Only push when the user explicitly says "git push" or equivalent.
+- Never commit automatically. Only commit when the user explicitly says "git commit" or equivalent.
+- Never push automatically. Only push when the user explicitly says "git push" or equivalent.
 - When committing, always include Claude as co-author:
   ```
   Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>

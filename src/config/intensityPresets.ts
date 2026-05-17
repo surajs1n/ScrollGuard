@@ -29,26 +29,30 @@ export interface IntensityColors {
 }
 
 export const INTENSITY_COLORS: Record<IntensityLevel, IntensityColors> = {
+  // Background and surfaces are identical across all intensities — neutral dark.
+  // Only the accent pair changes: it appears on interactive elements (buttons,
+  // selected borders, chart bars, week badge, gear icon, banner stripe) so the
+  // user always knows which mode they're in without the screen feeling alarming.
   gentle: {
-    bg:          '#081a0e',  // deep forest green
-    surface:     '#0f2318',
-    border:      '#1a3d26',
+    bg:          '#0f172a',  // same neutral slate-900
+    surface:     '#1e293b',  // same slate-800
+    border:      '#1e3a28',  // very subtle green tint on borders only
     accent:      '#22c55e',  // green-500
     accentLight: '#4ade80',  // green-400
   },
   balanced: {
-    bg:          '#0f172a',  // slate-900 (default)
+    bg:          '#0f172a',
     surface:     '#1e293b',
-    border:      '#334155',
+    border:      '#334155',  // neutral slate-700
     accent:      '#6366f1',  // indigo-500
     accentLight: '#818cf8',  // indigo-400
   },
   strict: {
-    bg:          '#1a0808',  // deep crimson dark
-    surface:     '#2d1212',
-    border:      '#4a1f1f',
-    accent:      '#ef4444',  // red-500
-    accentLight: '#f87171',  // red-400
+    bg:          '#0f172a',  // same neutral — no alarming red wash
+    surface:     '#1e293b',
+    border:      '#3d1f1f',  // very subtle red tint on borders only
+    accent:      '#f87171',  // red-400 (softer than red-500, less harsh)
+    accentLight: '#fca5a5',  // red-300
   },
 };
 

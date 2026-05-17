@@ -208,7 +208,7 @@ export async function getWeeklyUsageTotals(
   for (let i = 0; i < 7; i++) {
     const d = new Date(monday);
     d.setDate(monday.getDate() + i);
-    dates.push(d.toISOString().slice(0, 10));
+    dates.push(localDateString(d));
   }
 
   const placeholders = dates.map(() => '?').join(', ');
@@ -222,12 +222,19 @@ export async function getWeeklyUsageTotals(
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
+function localDateString(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
 export function todayString(): string {
-  return new Date().toISOString().slice(0, 10);
+  return localDateString(new Date());
 }
 
 export function yesterdayString(): string {
   const d = new Date();
   d.setDate(d.getDate() - 1);
-  return d.toISOString().slice(0, 10);
+  return localDateString(d);
 }
